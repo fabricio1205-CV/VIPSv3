@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Casa Victor | Seguimiento VIP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="loginView" class="screen screen-login">
+    <div class="login-card card">
+      <img src="casavictor-logo.png" alt="Casa Victor" class="brand-logo" />
+      <h1>Seguimiento mensual VIP</h1>
+      <p class="muted center">Ingresá con tu usuario y PIN.</p>
+
+      <form id="loginForm" class="form-grid">
+        <label>
+          <span>Usuario</span>
+          <select id="loginUser" required></select>
+        </label>
+        <label>
+          <span>PIN</span>
+          <input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Ingresar PIN" required />
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
+        <p id="loginError" class="form-error hidden"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="dashboardView" class="screen hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <img src="casavictor-logo.png" alt="Casa Victor" class="topbar-logo" />
+        <div>
+          <div class="eyebrow" id="panelTitle">Panel</div>
+          <h2 id="appHeading">Seguimiento mensual VIP</h2>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <div class="session-box">
+          <strong id="sessionName">Usuario</strong>
+          <span id="sessionRole">Rol</span>
+        </div>
+        <button id="logoutBtn" class="btn btn-light">Salir</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="hero card">
+        <div class="hero-left">
+          <h3>Control comercial por vendedor</h3>
+          <p class="muted">Si una cuenta tiene venta en cero o menor, el sistema exige motivo obligatorio antes de enviar el informe.</p>
+        </div>
+        <div class="hero-right">
+          <button id="downloadExcelBtn" class="btn btn-light hidden">Descargar Excel</button>
+          <button id="submitReportBtn" class="btn btn-success btn-lg">Enviar Informe</button>
+          <p id="submitHelp" class="muted"></p>
+        </div>
+      </section>
+
+      <section class="filters card">
+        <div class="section-head">
+          <div>
+            <h3>Filtros</h3>
+            <p class="muted">Actualizá la base desde el CSV y filtrá el período que querés ver.</p>
+          </div>
+          <div class="actions-inline">
+            <button id="refreshCsvBtn" class="btn btn-light">Actualizar base desde CSV</button>
+            <span id="refreshInfo" class="muted"></span>
+          </div>
+        </div>
+
+        <div class="filters-grid">
+          <label>
+            <span>Mes</span>
+            <select id="monthFilter"></select>
+          </label>
+          <label>
+            <span>Año</span>
+            <select id="yearFilter"></select>
+          </label>
+          <label>
+            <span>Buscar cliente</span>
+            <input id="searchInput" type="text" placeholder="Nombre del cliente" />
+          </label>
+          <label id="adminFilters">
+            <span>Vendedor</span>
+            <select id="sellerFilter"></select>
+          </label>
+          <label>
+            <span>Estado</span>
+            <select id="statusFilter"></select>
+          </label>
+          <label id="adminSentFilter">
+            <span>Informe</span>
+            <select id="sentFilter"></select>
+          </label>
+        </div>
+      </section>
+
+      <section class="metrics">
+        <div class="metric card">
+          <span class="metric-label">Total de cuentas</span>
+          <strong id="metricTotal">0</strong>
+        </div>
+        <div class="metric card">
+          <span class="metric-label">Pendientes</span>
+          <strong id="metricPending">0</strong>
+        </div>
+        <div class="metric card">
+          <span class="metric-label">Con compra</span>
+          <strong id="metricWithSales">0</strong>
+        </div>
+        <div class="metric card">
+          <span class="metric-label">Estado de guardado</span>
+          <strong id="saveIndicator" class="save-indicator">Listo</strong>
+        </div>
+      </section>
+
+      <section id="adminStatusBoard" class="card hidden"></section>
+      <section id="recordsContainer" class="records"></section>
+      <section id="historyContainer" class="card hidden"></section>
+    </main>
+  </div>
+
+  <template id="recordTemplate">
+    <article class="record card">
+      <div class="record-row">
+        <div class="record-client-block">
+          <h3 class="record-client"></h3>
+          <p class="record-meta">
+            <span class="record-alt"></span>
+            <span class="record-period"></span>
+          </p>
+        </div>
+
+        <div class="record-sales-wrap">
+          <span class="record-sales-label">Venta</span>
+          <strong class="record-sales"></strong>
+        </div>
+
+        <div class="record-state-wrap">
+          <select class="record-state"></select>
+        </div>
+
+        <div class="record-actions">
+          <button type="button" class="btn btn-light btn-comment-toggle">Comentario</button>
+        </div>
+      </div>
+
+      <div class="record-comment-panel hidden">
+        <label>
+          <span>Comentarios</span>
+          <textarea class="record-comments" rows="2" placeholder="Comentario opcional"></textarea>
+        </label>
+      </div>
+
+      <div class="record-foot">
+        <span class="record-updated muted"></span>
+        <span class="record-sent muted"></span>
+      </div>
+    </article>
+  </template>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
