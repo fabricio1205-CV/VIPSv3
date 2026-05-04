@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
@@ -10,163 +10,146 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div id="loginView" class="screen screen-login">
-    <div class="login-card card">
-      <img src="casavictor-logo.png" alt="Casa Victor" class="brand-logo" />
-      <h1>Seguimiento mensual VIP</h1>
-      <p class="muted center">Ingresá con tu usuario y PIN.</p>
+  <div id="app" class="app-shell">
+    <section id="loginView" class="view view--active">
+      <div class="login-card card">
+        <img src="assets/casavictor-logo.png" alt="Casa Victor" class="brand-logo brand-logo--login" />
+        <h1>Seguimiento mensual VIP</h1>
+        <p class="muted">Acceso interno para vendedores y administradores.</p>
 
-      <form id="loginForm" class="form-grid">
-        <label>
-          <span>Usuario</span>
-          <select id="loginUser" required></select>
-        </label>
-        <label>
-          <span>PIN</span>
-          <input id="loginPin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Ingresar PIN" required />
-        </label>
-        <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
-        <p id="loginError" class="form-error hidden"></p>
-      </form>
-    </div>
-  </div>
-
-  <div id="dashboardView" class="screen hidden">
-    <header class="topbar">
-      <div class="topbar-left">
-        <img src="casavictor-logo.png" alt="Casa Victor" class="topbar-logo" />
-        <div>
-          <div class="eyebrow" id="panelTitle">Panel</div>
-          <h2 id="appHeading">Seguimiento mensual VIP</h2>
-        </div>
+        <form id="loginForm" class="form-grid">
+          <label>
+            <span>Usuario</span>
+            <select id="loginUser" required></select>
+          </label>
+          <label>
+            <span>PIN</span>
+            <input id="loginPin" type="password" inputmode="numeric" placeholder="Ingresar PIN" required />
+          </label>
+          <button type="submit" class="btn btn--primary btn--full">Ingresar</button>
+          <p id="loginError" class="error-text hidden"></p>
+        </form>
       </div>
-      <div class="topbar-right">
-        <div class="session-box">
-          <strong id="sessionName">Usuario</strong>
-          <span id="sessionRole">Rol</span>
-        </div>
-        <button id="logoutBtn" class="btn btn-light">Salir</button>
-      </div>
-    </header>
+    </section>
 
-    <main class="layout">
-      <section class="hero card">
-        <div class="hero-left">
-          <h3>Control comercial por vendedor</h3>
-          <p class="muted">Si una cuenta tiene venta en cero o menor, el sistema exige motivo obligatorio antes de enviar el informe.</p>
-        </div>
-        <div class="hero-right">
-          <button id="downloadExcelBtn" class="btn btn-light hidden">Descargar Excel</button>
-          <button id="submitReportBtn" class="btn btn-success btn-lg">Enviar Informe</button>
-          <p id="submitHelp" class="muted"></p>
-        </div>
-      </section>
-
-      <section class="filters card">
-        <div class="section-head">
+    <section id="dashboardView" class="view hidden">
+      <header class="topbar card">
+        <div class="topbar__brand">
+          <img src="assets/casavictor-logo.png" alt="Casa Victor" class="brand-logo" />
           <div>
-            <h3>Filtros</h3>
-            <p class="muted">Actualizá la base desde el CSV y filtrá el período que querés ver.</p>
-          </div>
-          <div class="actions-inline">
-            <button id="refreshCsvBtn" class="btn btn-light">Actualizar base desde CSV</button>
-            <span id="refreshInfo" class="muted"></span>
+            <p class="eyebrow">Casa Victor</p>
+            <h2 id="panelTitle">Panel</h2>
           </div>
         </div>
+        <div class="topbar__actions">
+          <div class="save-indicator" id="saveIndicator">Listo</div>
+          <button id="logoutBtn" class="btn btn--ghost">Salir</button>
+        </div>
+      </header>
 
-        <div class="filters-grid">
-          <label>
-            <span>Mes</span>
-            <select id="monthFilter"></select>
-          </label>
-          <label>
-            <span>Año</span>
-            <select id="yearFilter"></select>
-          </label>
-          <label>
-            <span>Buscar cliente</span>
-            <input id="searchInput" type="text" placeholder="Nombre del cliente" />
-          </label>
-          <label id="adminFilters">
-            <span>Vendedor</span>
+      <main class="layout">
+        <aside class="sidebar card">
+          <div class="sidebar__section">
+            <p class="label-title">Usuario</p>
+            <h3 id="sessionName">-</h3>
+            <p id="sessionRole" class="muted">-</p>
+          </div>
+
+          <div class="sidebar__section">
+            <p class="label-title">Período</p>
+            <div class="stack-inline">
+              <select id="monthFilter"></select>
+              <select id="yearFilter"></select>
+            </div>
+          </div>
+
+          <div class="sidebar__section">
+            <p class="label-title">Búsqueda</p>
+            <input id="searchInput" type="search" placeholder="Buscar cliente..." />
+          </div>
+
+          <div id="adminFilters" class="sidebar__section hidden">
+            <p class="label-title">Filtros admin</p>
             <select id="sellerFilter"></select>
-          </label>
-          <label>
-            <span>Estado</span>
             <select id="statusFilter"></select>
-          </label>
-          <label id="adminSentFilter">
-            <span>Informe</span>
             <select id="sentFilter"></select>
-          </label>
-        </div>
-      </section>
+          </div>
 
-      <section class="metrics">
-        <div class="metric card">
-          <span class="metric-label">Total de cuentas</span>
-          <strong id="metricTotal">0</strong>
-        </div>
-        <div class="metric card">
-          <span class="metric-label">Pendientes</span>
-          <strong id="metricPending">0</strong>
-        </div>
-        <div class="metric card">
-          <span class="metric-label">Con compra</span>
-          <strong id="metricWithSales">0</strong>
-        </div>
-        <div class="metric card">
-          <span class="metric-label">Estado de guardado</span>
-          <strong id="saveIndicator" class="save-indicator">Listo</strong>
-        </div>
-      </section>
+          <div class="sidebar__section">
+            <p class="label-title">Actualización semanal</p>
+            <button id="refreshCsvBtn" class="btn btn--primary btn--full">Actualizar base desde CSV</button>
+            <p id="refreshInfo" class="tiny muted">La app lee el CSV configurado en config.js</p>
+          </div>
 
-      <section id="adminStatusBoard" class="card hidden"></section>
-      <section id="recordsContainer" class="records"></section>
-      <section id="historyContainer" class="card hidden"></section>
-    </main>
+          <div class="sidebar__section">
+            <p class="label-title">Resumen</p>
+            <div class="metrics-grid">
+              <div class="metric-box">
+                <span>Total</span>
+                <strong id="metricTotal">0</strong>
+              </div>
+              <div class="metric-box metric-box--danger">
+                <span>Pendientes</span>
+                <strong id="metricPending">0</strong>
+              </div>
+              <div class="metric-box metric-box--ok">
+                <span>Con compra</span>
+                <strong id="metricWithSales">0</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="sidebar__section">
+            <button id="submitReportBtn" class="btn btn--success btn--full" disabled>Enviar Informe</button>
+            <p id="submitHelp" class="tiny muted">Completá todos los casos con venta en cero para habilitar el envío.</p>
+          </div>
+        </aside>
+
+        <section class="content">
+          <div id="adminStatusBoard" class="card hidden"></div>
+          <div id="recordsContainer" class="cards-grid"></div>
+          <div id="historyContainer" class="card hidden"></div>
+        </section>
+      </main>
+    </section>
   </div>
 
   <template id="recordTemplate">
-    <article class="record card">
-      <div class="record-row">
-        <div class="record-client-block">
+    <article class="record-card card">
+      <div class="record-card__head">
+        <div>
           <h3 class="record-client"></h3>
-          <p class="record-meta">
-            <span class="record-alt"></span>
-            <span class="record-period"></span>
-          </p>
+          <p class="record-alt muted"></p>
         </div>
-
-        <div class="record-sales-wrap">
-          <span class="record-sales-label">Venta</span>
-          <strong class="record-sales"></strong>
-        </div>
-
-        <div class="record-state-wrap">
-          <select class="record-state"></select>
-        </div>
-
-        <div class="record-actions">
-          <button type="button" class="btn btn-light btn-comment-toggle">Comentario</button>
-        </div>
+        <span class="record-vendor badge"></span>
       </div>
 
-      <div class="record-comment-panel hidden">
+      <div class="record-grid">
+        <div><span class="field-label">Fx Compra 2025</span><strong class="record-fx"></strong></div>
+        <div><span class="field-label">Status 2025</span><strong class="record-status2025"></strong></div>
+        <div><span class="field-label">Venta en Pesos</span><strong class="record-sales"></strong></div>
+        <div><span class="field-label">Mes / Año</span><strong class="record-period"></strong></div>
+      </div>
+
+      <div class="feedback-block">
+        <label>
+          <span>Estado</span>
+          <select class="record-state"></select>
+        </label>
         <label>
           <span>Comentarios</span>
-          <textarea class="record-comments" rows="2" placeholder="Comentario opcional"></textarea>
+          <textarea class="record-comments" rows="3" placeholder="Agregar comentario breve..."></textarea>
         </label>
       </div>
 
-      <div class="record-foot">
-        <span class="record-updated muted"></span>
-        <span class="record-sent muted"></span>
+      <div class="record-footer">
+        <span class="record-updated tiny muted"></span>
+        <span class="record-sent tiny"></span>
       </div>
     </article>
   </template>
 
   <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=spacebar-fix-20260504"></script>
 </body>
 </html>
