@@ -1,4 +1,3 @@
-
 (() => {
   const USERS = [
     { username: 'Fabricio', pin: '12051205', role: 'admin', fullName: 'Fabricio' },
@@ -11,10 +10,8 @@
     { username: 'Leandro', pin: '1206', role: 'seller', fullName: 'Leandro del Hoyo' }
   ];
 
-  const PENDING_STATE = 'Pendiente';
-
   const NON_PURCHASE_STATES = [
-    PENDING_STATE,
+    '',
     'Precios altos',
     'Sin Stock / Faltantes',
     'Ya compró a otro proveedor',
@@ -26,7 +23,10 @@
     'Otro'
   ];
 
-  const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const MONTHS = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
 
   const els = {};
   const state = {
@@ -34,7 +34,8 @@
     clients: [],
     feedback: {},
     submissions: {},
-    saveTimer: null
+    saveTimer: null,
+    renderedRecords: []
   };
 
   document.addEventListener('DOMContentLoaded', init);
@@ -44,8 +45,8 @@
     populateUsers();
     bindEvents();
     hydrateLocalState();
-    await loadBaseData(false);
-    initFilters(false);
+    await loadBaseData();
+    initFilters();
   }
 
   function cacheDom() {
@@ -53,14 +54,12 @@
       'loginView','dashboardView','loginForm','loginUser','loginPin','loginError','logoutBtn','sessionName','sessionRole',
       'panelTitle','monthFilter','yearFilter','searchInput','sellerFilter','statusFilter','sentFilter','adminFilters',
       'recordsContainer','historyContainer','adminStatusBoard','metricTotal','metricPending','metricWithSales',
-      'submitReportBtn','submitHelp','saveIndicator','recordTemplate','refreshCsvBtn','refreshInfo','appHeading',
-      'downloadExcelBtn'
+      'submitReportBtn','submitHelp','saveIndicator','recordTemplate','refreshCsvBtn','refreshInfo'
     ].forEach(id => els[id] = document.getElementById(id));
   }
 
   function populateUsers() {
     els.loginUser.innerHTML = USERS.map(u => `<option value="${u.username}">${u.username}</option>`).join('');
-    if (window.APP_CONFIG?.appTitle) els.appHeading.textContent = window.APP_CONFIG.appTitle;
   }
 
   function bindEvents() {
@@ -68,10 +67,8 @@
     els.logoutBtn.addEventListener('click', logout);
     [els.monthFilter, els.yearFilter, els.searchInput, els.sellerFilter, els.statusFilter, els.sentFilter].forEach(el => {
       el.addEventListener('input', render);
-      el.addEventListener('change', render);
     });
     els.submitReportBtn.addEventListener('click', submitReport);
-    els.downloadExcelBtn.addEventListener('click', downloadExcelReport);
     els.refreshCsvBtn.addEventListener('click', async () => {
       await loadBaseData(true);
       initFilters(true);
@@ -82,52 +79,20 @@
   async function loadBaseData(showMessage = false) {
     try {
       setSaveIndicator('saving', 'Actualizando base...');
-      const sourceUrl = (window.APP_CONFIG?.remoteCsvUrl || '').trim() || (window.APP_CONFIG?.baseCsvPath || 'vips.csv');
-      const urls = buildCsvUrls(sourceUrl);
-      let rawText = '';
-      let lastError = null;
-
-      for (const url of urls) {
-        try {
-          const response = await fetch(url, { cache: 'no-store' });
-          if (!response.ok) throw new Error(`No se pudo leer el CSV (${response.status})`);
-          rawText = await response.text();
-          lastError = null;
-          break;
-        } catch (error) {
-          lastError = error;
-        }
-      }
-
-      if (lastError) throw lastError;
-      const parsed = parseCsvAuto(rawText).map(normalizeClient).filter(Boolean);
-      state.clients = parsed;
-      els.refreshInfo.textContent = `Base actualizada: ${formatDateTime(new Date())} · ${parsed.length} registros`;
+      const sourceUrl = (window.APP_CONFIG.remoteCsvUrl || '').trim() || window.APP_CONFIG.baseCsvPath;
+      const response = await fetch(sourceUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`No se pudo leer el CSV (${response.status})`);
+      const rawText = await response.text();
+      state.clients = parseCsvAuto(rawText).map(normalizeClient).filter(Boolean);
+      const now = new Date();
+      els.refreshInfo.textContent = `Base actualizada: ${formatDateTime(now)}`;
       setSaveIndicator('saved', showMessage ? 'Base actualizada' : 'Listo');
     } catch (error) {
       console.error(error);
       state.clients = [];
-      els.refreshInfo.textContent = getCsvLoadErrorMessage();
+      els.refreshInfo.textContent = 'No se pudo actualizar la base';
       setSaveIndicator('error', 'Error al actualizar base');
     }
-  }
-
-  function buildCsvUrls(sourceUrl) {
-    const cleanUrl = String(sourceUrl || '').trim();
-    if (!cleanUrl) return [];
-
-    const protocol = window.location?.protocol || '';
-    if (protocol === 'file:') return [cleanUrl];
-
-    const separator = cleanUrl.includes('?') ? '&' : '?';
-    return [`${cleanUrl}${separator}v=${Date.now()}`, cleanUrl];
-  }
-
-  function getCsvLoadErrorMessage() {
-    if ((window.location?.protocol || '') === 'file:') {
-      return 'No se pudo leer el CSV desde archivo local. AbrÃ­ la app desde GitHub Pages o con un servidor local.';
-    }
-    return 'No se pudo actualizar la base';
   }
 
   function hydrateLocalState() {
@@ -153,22 +118,20 @@
     els.monthFilter.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
     els.yearFilter.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
     els.sellerFilter.innerHTML = ['<option value="">Todos los vendedores</option>', ...sellers.map(s => `<option value="${s}">${s}</option>`)].join('');
-    els.statusFilter.innerHTML = ['<option value="">Todos los estados</option>', ...NON_PURCHASE_STATES.map(s => `<option value="${s}">${s}</option>`)].join('');
-    els.sentFilter.innerHTML = '<option value="">Enviados y no enviados</option><option value="sent">Enviados</option><option value="pending">No enviados</option>';
+    els.statusFilter.innerHTML = ['<option value="">Todos los estados</option>', ...NON_PURCHASE_STATES.filter(Boolean).map(s => `<option value="${s}">${s}</option>`)].join('');
+    els.sentFilter.innerHTML = `
+      <option value="">Enviados y no enviados</option>
+      <option value="sent">Enviados</option>
+      <option value="pending">No enviados</option>
+    `;
 
     if (keepCurrent && months.includes(prevMonth)) els.monthFilter.value = prevMonth;
     if (keepCurrent && years.map(String).includes(prevYear)) els.yearFilter.value = prevYear;
 
-    if (!els.monthFilter.value) {
-      const defaultMonth = window.APP_CONFIG?.defaultMonth || '';
-      if (months.includes(defaultMonth)) els.monthFilter.value = defaultMonth;
-      else if (periods.length) els.monthFilter.value = periods[periods.length - 1].mes;
-    }
-
-    if (!els.yearFilter.value) {
-      const defaultYear = String(window.APP_CONFIG?.defaultYear || '');
-      if (years.map(String).includes(defaultYear)) els.yearFilter.value = defaultYear;
-      else if (periods.length) els.yearFilter.value = String(periods[periods.length - 1].anio);
+    if (!els.monthFilter.value && periods.length) {
+      const last = periods[periods.length - 1];
+      els.monthFilter.value = last.mes;
+      els.yearFilter.value = String(last.anio);
     }
   }
 
@@ -202,10 +165,10 @@
   function render() {
     if (!state.currentUser) return;
     const records = getFilteredRecords();
+    state.renderedRecords = records;
     renderMetrics(records);
     renderRecords(records);
-    renderDownloadButton(records);
-    renderSubmitButton();
+    renderSubmitButton(records);
     renderAdminBoard();
     renderHistory(records);
   }
@@ -213,7 +176,7 @@
   function getFilteredRecords() {
     const month = els.monthFilter.value;
     const year = Number(els.yearFilter.value);
-    const q = normalizeText(els.searchInput.value || '');
+    const q = (els.searchInput.value || '').trim().toLowerCase();
     const seller = els.sellerFilter.value;
     const status = els.statusFilter.value;
     const sent = els.sentFilter.value;
@@ -223,10 +186,13 @@
       .filter(c => state.currentUser.role === 'admin' ? true : sameVendor(c.vendedor, state.currentUser.fullName || state.currentUser.username))
       .filter(c => seller ? c.vendedor === seller : true)
       .filter(c => {
-        const merged = normalizeText(`${c.cliente} ${c.nombreAlternativo}`);
+        const merged = `${c.cliente} ${c.nombreAlternativo}`.toLowerCase();
         return q ? merged.includes(q) : true;
       })
-      .filter(c => status ? getRecordStatus(c) === status : true)
+      .filter(c => {
+        const fb = getFeedback(c.id);
+        return status ? fb.estado === status : true;
+      })
       .filter(c => {
         const sentKey = reportKey(c.vendedor, c.mes, c.anio);
         const isSent = Boolean(state.submissions[sentKey]?.sent);
@@ -252,19 +218,20 @@
     }
 
     const fragment = document.createDocumentFragment();
+
     records.forEach(record => {
       const node = els.recordTemplate.content.firstElementChild.cloneNode(true);
       const fb = getFeedback(record.id);
-      const danger = record.ventaPesos <= 0;
-      const locked = isReportSent(record.vendedor, record.mes, record.anio);
-      const statusValue = getRecordStatus(record);
       const submitted = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
-      const hasComment = Boolean((fb.comentarios || '').trim());
+      const danger = record.ventaPesos <= 0;
 
       node.querySelector('.record-client').textContent = record.cliente;
-      node.querySelector('.record-alt').textContent = record.nombreAlternativo ? `Alt: ${record.nombreAlternativo}` : '';
-      node.querySelector('.record-period').textContent = `${record.mes} ${record.anio}`;
+      node.querySelector('.record-alt').textContent = record.nombreAlternativo || 'Sin nombre alternativo';
+      node.querySelector('.record-vendor').textContent = record.vendedor;
+      node.querySelector('.record-fx').textContent = record.fxCompra2025 || '-';
+      node.querySelector('.record-status2025').textContent = record.status2025 || '-';
       node.querySelector('.record-sales').textContent = formatCurrency(record.ventaPesos);
+      node.querySelector('.record-period').textContent = `${record.mes} ${record.anio}`;
       node.querySelector('.record-updated').textContent = fb.updatedAt ? `Última actualización: ${formatDateTime(fb.updatedAt)}` : 'Sin cambios guardados';
 
       const sentEl = node.querySelector('.record-sent');
@@ -279,51 +246,26 @@
       if (danger) node.classList.add('is-danger');
 
       const stateSelect = node.querySelector('.record-state');
-      stateSelect.innerHTML = NON_PURCHASE_STATES.map(s => `<option value="${s}">${s}</option>`).join('');
-      stateSelect.value = danger ? statusValue : '';
-      stateSelect.disabled = !danger || locked;
+      stateSelect.innerHTML = NON_PURCHASE_STATES.map(s => `<option value="${s}">${s || 'Seleccionar motivo'}</option>`).join('');
+      stateSelect.value = fb.estado || '';
+      stateSelect.disabled = !danger;
       stateSelect.required = danger;
-      updateStateAppearance(stateSelect, statusValue, danger);
 
-      const commentsPanel = node.querySelector('.record-comment-panel');
       const commentsEl = node.querySelector('.record-comments');
-      const commentToggle = node.querySelector('.btn-comment-toggle');
-
       commentsEl.value = fb.comentarios || '';
       commentsEl.disabled = !danger;
+
       if (!danger) {
+        stateSelect.title = 'No requiere feedback porque tiene venta positiva';
         commentsEl.placeholder = 'No requiere comentario';
-        commentToggle.disabled = true;
-        commentToggle.textContent = 'Sin comentario';
-      } else if (locked) {
-        commentsEl.disabled = true;
-        commentToggle.disabled = !hasComment;
-        commentToggle.textContent = hasComment ? 'Ver comentario' : 'Comentario';
-      } else {
-        commentToggle.textContent = hasComment ? 'Ver comentario' : 'Agregar comentario';
       }
 
-      if (hasComment) commentsPanel.classList.remove('hidden');
-
-      commentToggle.addEventListener('click', () => {
-        if (commentToggle.disabled) return;
-        commentsPanel.classList.toggle('hidden');
-        if (!commentsPanel.classList.contains('hidden')) commentsEl.focus();
-      });
-
       if (canEditRecord(record)) {
-        stateSelect.addEventListener('change', () => {
-          updateStateAppearance(stateSelect, stateSelect.value, danger);
-          saveRecordFeedback(record, stateSelect.value, commentsEl.value);
-        });
-        commentsEl.addEventListener('input', () => {
-          saveRecordFeedback(record, stateSelect.value, commentsEl.value);
-          commentToggle.textContent = commentsEl.value.trim() ? 'Ver comentario' : 'Agregar comentario';
-        });
+        stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value, { rerender: true }));
+        commentsEl.addEventListener('input', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
       } else {
         stateSelect.disabled = true;
         commentsEl.disabled = true;
-        if (!hasComment) commentToggle.disabled = true;
       }
 
       fragment.appendChild(node);
@@ -332,111 +274,29 @@
     els.recordsContainer.appendChild(fragment);
   }
 
-  function renderSubmitButton() {
+  function renderSubmitButton(records) {
     if (state.currentUser.role === 'admin') {
       els.submitReportBtn.disabled = true;
-      els.submitHelp.textContent = 'Desde administrador podés ver y editar, pero no enviar informes.';
+      els.submitReportBtn.textContent = 'Enviar Informe';
+      els.submitHelp.textContent = 'En el perfil administrador solo se monitorean y editan informes.';
       return;
     }
 
-    const month = els.monthFilter.value;
-    const year = Number(els.yearFilter.value);
-    const ownRecords = state.clients.filter(c => c.mes === month && c.anio === year && sameVendor(c.vendedor, state.currentUser.fullName));
-    const pending = ownRecords.filter(isPendingFeedback).length;
-    const sentKey = reportKey(state.currentUser.fullName, month, year);
+    const periodRecords = records;
+    const pending = periodRecords.filter(isPendingFeedback).length;
+    const sentKey = reportKey(state.currentUser.fullName, els.monthFilter.value, Number(els.yearFilter.value));
     const alreadySent = Boolean(state.submissions[sentKey]?.sent);
 
-    els.submitReportBtn.disabled = pending > 0 || ownRecords.length === 0 || alreadySent;
+    els.submitReportBtn.disabled = pending > 0 || !periodRecords.length;
     els.submitReportBtn.textContent = alreadySent ? 'Informe Enviado' : 'Enviar Informe';
 
-    if (!ownRecords.length) {
-      els.submitHelp.textContent = 'No hay cuentas para este período.';
-    } else if (alreadySent) {
+    if (alreadySent) {
       els.submitHelp.textContent = `Enviado el ${formatDateTime(state.submissions[sentKey].sentAt)}.`;
     } else if (pending > 0) {
       els.submitHelp.textContent = `Faltan ${pending} caso(s) con venta en cero sin motivo cargado.`;
     } else {
       els.submitHelp.textContent = 'Todo completo. Ya podés enviar el informe.';
     }
-  }
-
-  function renderDownloadButton(records) {
-    const canDownload = state.currentUser?.role === 'admin' && state.currentUser.username === 'Fabricio';
-    els.downloadExcelBtn.classList.toggle('hidden', !canDownload);
-    if (!canDownload) return;
-    els.downloadExcelBtn.disabled = !records.length;
-  }
-
-  function downloadExcelReport() {
-    if (!(state.currentUser?.role === 'admin' && state.currentUser.username === 'Fabricio')) return;
-
-    const records = getFilteredRecords();
-    if (!records.length) {
-      alert('No hay registros para exportar con los filtros seleccionados.');
-      return;
-    }
-
-    const month = els.monthFilter.value || 'todos';
-    const year = els.yearFilter.value || 'todos';
-    const filename = `informe-vip-${slugify(month)}-${year}.xls`;
-    const rows = records.map(record => {
-      const fb = getFeedback(record.id);
-      const sent = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
-      const displayStatus = record.ventaPesos > 0 ? 'Con compra' : getRecordStatus(record);
-
-      return `
-        <tr>
-          <td>${escapeHtml(record.cliente)}</td>
-          <td>${escapeHtml(record.nombreAlternativo || '')}</td>
-          <td>${escapeHtml(record.vendedor)}</td>
-          <td>${escapeHtml(record.mes)}</td>
-          <td>${record.anio}</td>
-          <td>${formatCurrency(record.ventaPesos)}</td>
-          <td>${escapeHtml(displayStatus)}</td>
-          <td>${escapeHtml(fb.comentarios || '')}</td>
-          <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
-          <td>${sent?.sent ? 'Si' : 'No'}</td>
-          <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
-        </tr>`;
-    }).join('');
-
-    const html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office"
-            xmlns:x="urn:schemas-microsoft-com:office:excel"
-            xmlns="http://www.w3.org/TR/REC-html40">
-        <head>
-          <meta charset="UTF-8" />
-        </head>
-        <body>
-          <table border="1">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Nombre alternativo</th>
-                <th>Vendedor</th>
-                <th>Mes</th>
-                <th>Ano</th>
-                <th>Venta</th>
-                <th>Estado</th>
-                <th>Comentarios</th>
-                <th>Ultima actualizacion</th>
-                <th>Informe enviado</th>
-                <th>Fecha envio</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </body>
-      </html>`;
-
-    const blob = new Blob(['\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(link.href), 0);
   }
 
   function renderAdminBoard() {
@@ -450,7 +310,7 @@
     const periodRecords = state.clients.filter(c => c.mes === month && c.anio === year);
     const grouped = groupBy(periodRecords, item => item.vendedor);
 
-    const html = Object.keys(grouped).sort((a,b) => a.localeCompare(b, 'es')).map(vendor => {
+    const cards = Object.keys(grouped).sort((a,b)=>a.localeCompare(b,'es')).map(vendor => {
       const records = grouped[vendor];
       const pending = records.filter(isPendingFeedback).length;
       const sent = Boolean(state.submissions[reportKey(vendor, month, year)]?.sent);
@@ -461,17 +321,18 @@
           <p>Pendientes: <strong>${pending}</strong></p>
           <p>Con compra: <strong>${records.filter(r => r.ventaPesos > 0).length}</strong></p>
           <p>Informe: <strong>${sent ? 'Enviado' : 'No enviado'}</strong></p>
-        </div>`;
+        </div>
+      `;
     }).join('');
 
     els.adminStatusBoard.innerHTML = `
       <div class="section-head">
         <div>
           <h3>Estado general por vendedor</h3>
-          <p class="muted">Período: ${month || '-'} ${year || ''}</p>
+          <p class="muted">Período: ${month} ${year}</p>
         </div>
       </div>
-      <div class="status-board-grid">${html || '<p>No hay datos para este período.</p>'}</div>
+      <div class="status-board-grid">${cards || '<p>No hay datos para este período.</p>'}</div>
     `;
     els.adminStatusBoard.classList.remove('hidden');
   }
@@ -482,23 +343,24 @@
       const sent = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
       return `
         <tr>
-          <td>${escapeHtml(record.cliente)}</td>
-          <td>${escapeHtml(record.vendedor)}</td>
-          <td>${escapeHtml(record.mes)}</td>
+          <td>${record.cliente}</td>
+          <td>${record.vendedor}</td>
+          <td>${record.mes}</td>
           <td>${record.anio}</td>
           <td>${formatCurrency(record.ventaPesos)}</td>
-          <td>${escapeHtml(getRecordStatus(record) || '-')}</td>
+          <td>${fb.estado || '-'}</td>
           <td>${escapeHtml(fb.comentarios || '-')}</td>
           <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
           <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
-        </tr>`;
+        </tr>
+      `;
     }).join('');
 
     els.historyContainer.innerHTML = `
       <div class="section-head">
         <div>
           <h3>Historial del período filtrado</h3>
-          <p class="muted">Se muestra solo lo visible según filtros actuales.</p>
+          <p class="muted">Se muestra lo que está visible según filtros actuales.</p>
         </div>
       </div>
       <div class="history-table-wrap">
@@ -518,15 +380,16 @@
           </thead>
           <tbody>${rows || '<tr><td colspan="9">Sin registros.</td></tr>'}</tbody>
         </table>
-      </div>`;
+      </div>
+    `;
     els.historyContainer.classList.remove('hidden');
   }
 
-  function saveRecordFeedback(record, estado, comentarios) {
+  function saveRecordFeedback(record, estado, comentarios, options = {}) {
     if (!canEditRecord(record)) return;
     state.feedback[record.id] = {
       estado: (estado || '').trim(),
-      comentarios: (comentarios || '').trim(),
+      comentarios: comentarios || '',
       updatedAt: new Date().toISOString(),
       vendedor: record.vendedor,
       mes: record.mes,
@@ -538,8 +401,8 @@
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => {
       setSaveIndicator('saved', 'Guardado automáticamente');
-      render();
-    }, 220);
+      if (options.rerender) render();
+    }, 250);
   }
 
   function submitReport() {
@@ -548,15 +411,12 @@
     const year = Number(els.yearFilter.value);
     const ownRecords = state.clients.filter(c => c.mes === month && c.anio === year && sameVendor(c.vendedor, state.currentUser.fullName));
     const pending = ownRecords.filter(isPendingFeedback).length;
-    const sentKey = reportKey(state.currentUser.fullName, month, year);
     if (pending > 0) {
       alert(`Todavía faltan ${pending} caso(s) con venta en cero sin completar.`);
       return;
     }
 
-    if (!ownRecords.length || state.submissions[sentKey]?.sent) return;
-
-    state.submissions[sentKey] = {
+    state.submissions[reportKey(state.currentUser.fullName, month, year)] = {
       sent: true,
       sentAt: new Date().toISOString(),
       vendor: state.currentUser.fullName,
@@ -566,31 +426,19 @@
     writeStorage('cv_submissions', state.submissions);
     setSaveIndicator('saved', 'Informe enviado');
     render();
-    alert('Informe enviado con \u00E9xito');
   }
 
   function canEditRecord(record) {
-    if (isReportSent(record.vendedor, record.mes, record.anio)) return false;
     return state.currentUser.role === 'admin' || sameVendor(record.vendedor, state.currentUser.fullName);
   }
 
   function isPendingFeedback(record) {
     if (record.ventaPesos > 0) return false;
-    return getRecordStatus(record) === PENDING_STATE;
+    return !getFeedback(record.id).estado;
   }
 
   function getFeedback(id) {
     return state.feedback[id] || { estado: '', comentarios: '', updatedAt: '' };
-  }
-
-  function getRecordStatus(record) {
-    const status = (getFeedback(record.id).estado || '').trim();
-    if (record.ventaPesos > 0) return status;
-    return status || PENDING_STATE;
-  }
-
-  function isReportSent(vendedor, mes, anio) {
-    return Boolean(state.submissions[reportKey(vendedor, mes, anio)]?.sent);
   }
 
   function reportKey(vendedor, mes, anio) {
@@ -599,15 +447,17 @@
 
   function normalizeClient(raw) {
     const cliente = pick(raw, ['CLIENTE', 'NOMBRE DEL CLIENTE', 'CLIENTE VIP']);
-    const vendedor = normalizeVendor(pick(raw, ['VENDEDOR', 'NOMBRE DEL VENDEDOR']));
+    const vendedorRaw = pick(raw, ['VENDEDOR', 'NOMBRE DEL VENDEDOR']);
+    const vendedor = normalizeVendor(vendedorRaw);
     const nombreAlternativo = pick(raw, ['NOMBRE ALTERNATIVO', 'ALTERNATIVO', 'CUENTA ALTERNATIVA']);
     const fxCompra2025 = pick(raw, ['FX COMPRA 2025', 'FX COMPRA', 'FRECUENCIA 2025']);
     const status2025 = pick(raw, ['STATUS 2025', 'STATUS', 'ESTADO 2025']);
     const ventaPesos = parseMoney(pick(raw, ['VALUE $', 'VENTA EN PESOS', 'VENTA', 'VALUE$']));
-    const mes = normalizeMonth(pick(raw, ['MES', 'MES INFORME']) || window.APP_CONFIG?.defaultMonth || '');
-    const anio = parseInt(pick(raw, ['AÑO', 'ANIO', 'AÑO INFORME']) || window.APP_CONFIG?.defaultYear || '0', 10);
+    const mes = normalizeMonth(pick(raw, ['MES', 'MES INFORME']));
+    const anio = parseInt(pick(raw, ['AÑO', 'ANIO', 'AÑO INFORME']) || '0', 10);
 
     if (!cliente || !vendedor || !mes || !anio) return null;
+
     return {
       id: slugify(`${cliente}|${vendedor}|${mes}|${anio}`),
       cliente,
@@ -628,16 +478,12 @@
       'paola balado': 'Paola Balado',
       'dario lopez': 'Dario Lopez',
       'tucu': 'Dario Lopez',
-      'gaston': 'Gaston Rodriguez',
       'gaston rodriguez': 'Gaston Rodriguez',
-      'diego': 'Diego Daniel Ponce',
       'diego daniel ponce': 'Diego Daniel Ponce',
-      'martin': 'Martin Aguilar',
       'martin aguilar': 'Martin Aguilar',
-      'leandro': 'Leandro del Hoyo',
       'leandro del hoyo': 'Leandro del Hoyo'
     };
-    return map[clean] || toTitleCase(String(value || '').trim());
+    return map[clean] || toTitleCase((value || '').trim());
   }
 
   function sameVendor(a, b) {
@@ -655,7 +501,7 @@
       '6': 'Junio', '06': 'Junio', 'junio': 'Junio',
       '7': 'Julio', '07': 'Julio', 'julio': 'Julio',
       '8': 'Agosto', '08': 'Agosto', 'agosto': 'Agosto',
-      '9': 'Septiembre', '09': 'Septiembre', 'septiembre': 'Septiembre', 'setiembre': 'Septiembre',
+      '9': 'Septiembre', '09': 'Septiembre', 'septiembre': 'Septiembre',
       '10': 'Octubre', 'octubre': 'Octubre',
       '11': 'Noviembre', 'noviembre': 'Noviembre',
       '12': 'Diciembre', 'diciembre': 'Diciembre'
@@ -664,44 +510,30 @@
   }
 
   function monthOrder(month) {
-    const idx = MONTHS.findIndex(m => normalizeText(m) === normalizeText(month));
-    return idx === -1 ? 99 : idx;
+    return MONTHS.findIndex(m => normalizeText(m) === normalizeText(month));
   }
 
   function parseMoney(value) {
     if (value == null) return 0;
-    const cleaned = String(value)
-      .replace(/\$/g, '')
-      .replace(/\./g, '')
-      .replace(/,/g, '.')
-      .replace(/\s+/g, '')
-      .trim();
+    const cleaned = String(value).replace(/\$/g, '').replace(/\./g, '').replace(/,/g, '.').replace(/\s+/g, '').trim();
     const num = Number(cleaned);
     return Number.isFinite(num) ? num : 0;
   }
 
   function parseCsvAuto(text) {
-    const cleaned = String(text || '').replace(/^\uFEFF/, '').trim();
+    const cleaned = text.replace(/^\uFEFF/, '').trim();
     if (!cleaned) return [];
 
     const firstLine = cleaned.split(/\r?\n/)[0] || '';
-    let delimiter = ',';
-    if (firstLine.includes('\t')) delimiter = '\t';
-    else if ((firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = ';';
-
+    const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
     const rows = splitCsvRows(cleaned, delimiter);
     if (!rows.length) return [];
-
     const headers = rows[0].map(cell => sanitizeHeader(cell));
-    return rows.slice(1)
-      .filter(row => row.some(Boolean))
-      .map(row => {
-        const obj = {};
-        headers.forEach((header, index) => {
-          obj[header] = (row[index] || '').trim();
-        });
-        return obj;
-      });
+    return rows.slice(1).filter(row => row.some(Boolean)).map(row => {
+      const obj = {};
+      headers.forEach((header, index) => obj[header] = (row[index] || '').trim());
+      return obj;
+    });
   }
 
   function splitCsvRows(text, delimiter) {
@@ -740,12 +572,7 @@
   }
 
   function sanitizeHeader(header) {
-    return String(header || '')
-      .replace(/^\uFEFF/, '')
-      .trim()
-      .toUpperCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+    return String(header || '').replace(/^\uFEFF/, '').trim().toUpperCase();
   }
 
   function pick(obj, keys) {
@@ -757,21 +584,7 @@
   }
 
   function formatCurrency(value) {
-    return new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: 'ARS',
-      maximumFractionDigits: 0
-    }).format(Number(value || 0));
-  }
-
-  function updateStateAppearance(select, value, applies) {
-    select.classList.remove('record-state--pending', 'record-state--complete');
-    if (!applies) return;
-    if (value === PENDING_STATE) {
-      select.classList.add('record-state--pending');
-      return;
-    }
-    if (value) select.classList.add('record-state--complete');
+    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value || 0));
   }
 
   function setSaveIndicator(kind, message) {
@@ -809,11 +622,7 @@
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
     return new Intl.DateTimeFormat('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
     }).format(date);
   }
 
@@ -831,7 +640,7 @@
   }
 
   function escapeHtml(value) {
-    return String(value || '')
+    return String(value)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
