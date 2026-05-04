@@ -261,7 +261,7 @@
       }
 
       if (canEditRecord(record)) {
-        stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value, { rerender: true }));
+        stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
         commentsEl.addEventListener('input', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
       } else {
         stateSelect.disabled = true;
@@ -385,7 +385,7 @@
     els.historyContainer.classList.remove('hidden');
   }
 
-  function saveRecordFeedback(record, estado, comentarios, options = {}) {
+  function saveRecordFeedback(record, estado, comentarios) {
     if (!canEditRecord(record)) return;
     state.feedback[record.id] = {
       estado: (estado || '').trim(),
@@ -401,8 +401,17 @@
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => {
       setSaveIndicator('saved', 'Guardado automáticamente');
-      if (options.rerender) render();
+      refreshFeedbackPanels();
     }, 250);
+  }
+
+  function refreshFeedbackPanels() {
+    const records = getFilteredRecords();
+    state.renderedRecords = records;
+    renderMetrics(records);
+    renderSubmitButton(records);
+    renderAdminBoard();
+    renderHistory(records);
   }
 
   function submitReport() {
