@@ -1,7 +1,7 @@
-(() => {
+﻿(() => {
   const USERS = [
     { username: 'Fabricio', pin: '12051205', role: 'admin', fullName: 'Fabricio' },
-    { username: 'Seba', pin: '1207', role: 'admin', fullName: 'Sebastián' },
+    { username: 'Seba', pin: '1207', role: 'admin', fullName: 'SebastiÃ¡n' },
     { username: 'Paola', pin: '1201', role: 'seller', fullName: 'Paola Balado' },
     { username: 'Tucu', pin: '1202', role: 'seller', fullName: 'Dario Lopez' },
     { username: 'Gaston', pin: '1203', role: 'seller', fullName: 'Gaston Rodriguez' },
@@ -14,11 +14,11 @@
     '',
     'Precios altos',
     'Sin Stock / Faltantes',
-    'Ya compró a otro proveedor',
-    'No tenía necesidad',
+    'Ya comprÃ³ a otro proveedor',
+    'No tenÃ­a necesidad',
     'Problema financiero',
-    'No está comprando / Cerrado',
-    'No respondió',
+    'No estÃ¡ comprando / Cerrado',
+    'No respondiÃ³',
     'Compra el mes que viene',
     'Otro'
   ];
@@ -34,7 +34,6 @@
     clients: [],
     feedback: {},
     submissions: {},
-    saveTimer: null,
     renderedRecords: []
   };
 
@@ -232,11 +231,11 @@
       node.querySelector('.record-status2025').textContent = record.status2025 || '-';
       node.querySelector('.record-sales').textContent = formatCurrency(record.ventaPesos);
       node.querySelector('.record-period').textContent = `${record.mes} ${record.anio}`;
-      node.querySelector('.record-updated').textContent = fb.updatedAt ? `Última actualización: ${formatDateTime(fb.updatedAt)}` : 'Sin cambios guardados';
+      node.querySelector('.record-updated').textContent = fb.updatedAt ? `Ãšltima actualizaciÃ³n: ${formatDateTime(fb.updatedAt)}` : 'Sin cambios guardados';
 
       const sentEl = node.querySelector('.record-sent');
       if (submitted?.sent) {
-        sentEl.textContent = `Informe enviado · ${formatDateTime(submitted.sentAt)}`;
+        sentEl.textContent = `Informe enviado Â· ${formatDateTime(submitted.sentAt)}`;
         sentEl.classList.add('sent');
       } else {
         sentEl.textContent = 'Informe no enviado';
@@ -262,7 +261,8 @@
 
       if (canEditRecord(record)) {
         stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
-        commentsEl.addEventListener('input', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
+        commentsEl.addEventListener('keydown', event => event.stopPropagation());
+        commentsEl.addEventListener('blur', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
       } else {
         stateSelect.disabled = true;
         commentsEl.disabled = true;
@@ -295,7 +295,7 @@
     } else if (pending > 0) {
       els.submitHelp.textContent = `Faltan ${pending} caso(s) con venta en cero sin motivo cargado.`;
     } else {
-      els.submitHelp.textContent = 'Todo completo. Ya podés enviar el informe.';
+      els.submitHelp.textContent = 'Todo completo. Ya podÃ©s enviar el informe.';
     }
   }
 
@@ -329,10 +329,10 @@
       <div class="section-head">
         <div>
           <h3>Estado general por vendedor</h3>
-          <p class="muted">Período: ${month} ${year}</p>
+          <p class="muted">PerÃ­odo: ${month} ${year}</p>
         </div>
       </div>
-      <div class="status-board-grid">${cards || '<p>No hay datos para este período.</p>'}</div>
+      <div class="status-board-grid">${cards || '<p>No hay datos para este perÃ­odo.</p>'}</div>
     `;
     els.adminStatusBoard.classList.remove('hidden');
   }
@@ -359,8 +359,8 @@
     els.historyContainer.innerHTML = `
       <div class="section-head">
         <div>
-          <h3>Historial del período filtrado</h3>
-          <p class="muted">Se muestra lo que está visible según filtros actuales.</p>
+          <h3>Historial del perÃ­odo filtrado</h3>
+          <p class="muted">Se muestra lo que estÃ¡ visible segÃºn filtros actuales.</p>
         </div>
       </div>
       <div class="history-table-wrap">
@@ -370,12 +370,12 @@
               <th>Cliente</th>
               <th>Vendedor</th>
               <th>Mes</th>
-              <th>Año</th>
+              <th>AÃ±o</th>
               <th>Venta</th>
               <th>Estado</th>
               <th>Comentarios</th>
-              <th>Actualización</th>
-              <th>Envío</th>
+              <th>ActualizaciÃ³n</th>
+              <th>EnvÃ­o</th>
             </tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="9">Sin registros.</td></tr>'}</tbody>
@@ -385,7 +385,7 @@
     els.historyContainer.classList.remove('hidden');
   }
 
-  function saveRecordFeedback(record, estado, comentarios) {
+  function updateRecordFeedbackDraft(record, estado, comentarios) {
     if (!canEditRecord(record)) return;
     state.feedback[record.id] = {
       estado: (estado || '').trim(),
@@ -396,13 +396,13 @@
       anio: record.anio,
       cliente: record.cliente
     };
+  }
+
+  function saveRecordFeedback(record, estado, comentarios) {
+    updateRecordFeedbackDraft(record, estado, comentarios);
     writeStorage('cv_feedback', state.feedback);
-    setSaveIndicator('saving', 'Guardando...');
-    clearTimeout(state.saveTimer);
-    state.saveTimer = setTimeout(() => {
-      setSaveIndicator('saved', 'Guardado automáticamente');
-      refreshFeedbackPanels();
-    }, 250);
+    setSaveIndicator('saved', 'Guardado automaticamente');
+    refreshFeedbackPanels();
   }
 
   function refreshFeedbackPanels() {
@@ -421,7 +421,7 @@
     const ownRecords = state.clients.filter(c => c.mes === month && c.anio === year && sameVendor(c.vendedor, state.currentUser.fullName));
     const pending = ownRecords.filter(isPendingFeedback).length;
     if (pending > 0) {
-      alert(`Todavía faltan ${pending} caso(s) con venta en cero sin completar.`);
+      alert(`TodavÃ­a faltan ${pending} caso(s) con venta en cero sin completar.`);
       return;
     }
 
@@ -463,7 +463,7 @@
     const status2025 = pick(raw, ['STATUS 2025', 'STATUS', 'ESTADO 2025']);
     const ventaPesos = parseMoney(pick(raw, ['VALUE $', 'VENTA EN PESOS', 'VENTA', 'VALUE$']));
     const mes = normalizeMonth(pick(raw, ['MES', 'MES INFORME']));
-    const anio = parseInt(pick(raw, ['AÑO', 'ANIO', 'AÑO INFORME']) || '0', 10);
+    const anio = parseInt(pick(raw, ['AÃ‘O', 'ANIO', 'AÃ‘O INFORME']) || '0', 10);
 
     if (!cliente || !vendedor || !mes || !anio) return null;
 
