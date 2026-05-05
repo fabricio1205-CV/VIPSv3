@@ -1,4 +1,4 @@
-﻿(() => {
+(() => {
   const USERS = [
     { username: 'Fabricio', pin: '12051205', role: 'admin', fullName: 'Fabricio' },
     { username: 'Seba', pin: '1207', role: 'admin', fullName: 'SebastiÃ¡n' },
@@ -34,6 +34,7 @@
     clients: [],
     feedback: {},
     submissions: {},
+    saveTimer: null,
     renderedRecords: []
   };
 
@@ -82,11 +83,7 @@
       const response = await fetch(sourceUrl, { cache: 'no-store' });
       if (!response.ok) throw new Error(`No se pudo leer el CSV (${response.status})`);
       const rawText = await response.text();
-      const csvRows = parseCsvAuto(rawText);
-      state.clients = csvRows.map(normalizeClient).filter(Boolean);
-      if (csvRows.length && !state.clients.length) {
-        throw new Error('El CSV se leyo, pero no se encontraron filas validas. Revisar columnas CLIENTE, VENDEDOR, MES y ANO.');
-      }
+      state.clients = parseCsvAuto(rawText).map(normalizeClient).filter(Boolean);
       const now = new Date();
       els.refreshInfo.textContent = `Base actualizada: ${formatDateTime(now)}`;
       setSaveIndicator('saved', showMessage ? 'Base actualizada' : 'Listo');
@@ -265,8 +262,7 @@
 
       if (canEditRecord(record)) {
         stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
-        commentsEl.addEventListener('keydown', event => event.stopPropagation());
-        commentsEl.addEventListener('blur', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
+        commentsEl.addEventListener('input', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
       } else {
         stateSelect.disabled = true;
         commentsEl.disabled = true;
@@ -389,33 +385,24 @@
     els.historyContainer.classList.remove('hidden');
   }
 
-  function updateRecordFeedbackDraft(record, estado, comentarios) {
+  function saveRecordFeedback(record, estado, comentarios) {
     if (!canEditRecord(record)) return;
     state.feedback[record.id] = {
       estado: (estado || '').trim(),
-      comentarios: comentarios || '',
+      comentarios: (comentarios || '').trim(),
       updatedAt: new Date().toISOString(),
       vendedor: record.vendedor,
       mes: record.mes,
       anio: record.anio,
       cliente: record.cliente
     };
-  }
-
-  function saveRecordFeedback(record, estado, comentarios) {
-    updateRecordFeedbackDraft(record, estado, comentarios);
     writeStorage('cv_feedback', state.feedback);
-    setSaveIndicator('saved', 'Guardado automaticamente');
-    refreshFeedbackPanels();
-  }
-
-  function refreshFeedbackPanels() {
-    const records = getFilteredRecords();
-    state.renderedRecords = records;
-    renderMetrics(records);
-    renderSubmitButton(records);
-    renderAdminBoard();
-    renderHistory(records);
+    setSaveIndicator('saving', 'Guardando...');
+    clearTimeout(state.saveTimer);
+    state.saveTimer = setTimeout(() => {
+      setSaveIndicator('saved', 'Guardado automÃ¡ticamente');
+      render();
+    }, 250);
   }
 
   function submitReport() {
@@ -467,7 +454,7 @@
     const status2025 = pick(raw, ['STATUS 2025', 'STATUS', 'ESTADO 2025']);
     const ventaPesos = parseMoney(pick(raw, ['VALUE $', 'VENTA EN PESOS', 'VENTA', 'VALUE$']));
     const mes = normalizeMonth(pick(raw, ['MES', 'MES INFORME']));
-    const anio = parseInt(pick(raw, ['ANO', 'ANIO', 'ANO INFORME', 'AÃ‘O', 'AÃ‘O INFORME']) || '0', 10);
+    const anio = parseInt(pick(raw, ['AÃ‘O', 'ANIO', 'AÃ‘O INFORME']) || '0', 10);
 
     if (!cliente || !vendedor || !mes || !anio) return null;
 
@@ -593,19 +580,7 @@
       const normalized = sanitizeHeader(key);
       if (obj[normalized] != null && obj[normalized] !== '') return obj[normalized];
     }
-
-    const entries = Object.entries(obj);
-    for (const key of keys) {
-      const normalized = normalizeHeaderKey(key);
-      const match = entries.find(([header, value]) => normalizeHeaderKey(header) === normalized && value != null && value !== '');
-      if (match) return match[1];
-    }
-
     return '';
-  }
-
-  function normalizeHeaderKey(value) {
-    return normalizeText(value).replace(/[^a-z0-9]+/g, '');
   }
 
   function formatCurrency(value) {
