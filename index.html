@@ -149,27 +149,7 @@
     </article>
   </template>
 
-  <script src="config.js?v=csv-path-20260504"></script>
-  <script>
-    (() => {
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = async (resource, options) => {
-        const response = await originalFetch(resource, options);
-        const url = typeof resource === 'string' ? resource : (resource && resource.url) || '';
-        const decodedUrl = decodeURIComponent(url).toLowerCase();
-
-        if (!decodedUrl.includes('vips de prueba.csv')) return response;
-
-        const text = await response.clone().text();
-        const fixedText = text.replace(/^(CLIENTE;VENDEDOR;Fx Compra 2025;Status 2025;VALUE \$;Mes;)(?:Año|AÑO|Ano|ANO)/m, '$1ANIO');
-        return new Response(fixedText, {
-          status: response.status,
-          statusText: response.statusText,
-          headers: response.headers
-        });
-      };
-    })();
-  </script>
-  <script src="app.js?v=csv-fetch-fix-20260504"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

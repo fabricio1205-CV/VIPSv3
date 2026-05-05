@@ -1,9 +1,10 @@
 window.APP_CONFIG = {
   mode: 'mock',
   appsScriptUrl: '',
-  baseCsvPath: 'vips%20de%20prueba.csv',
+  // CSV base que se puede reemplazar semanalmente por el nuevo archivo.
+  // También se puede cambiar este path por una URL raw pública.
+  baseCsvPath: 'vips de prueba.csv',
+  // Si querés leer directo desde GitHub Raw más adelante, pegá la URL acá.
   remoteCsvUrl: '',
-  appTitle: 'Casa Victor | Seguimiento VIP',
-  defaultMonth: 'Marzo',
-  defaultYear: 2026
+  appTitle: 'Seguimiento mensual VIP'
 };
