@@ -11,8 +11,10 @@
     { username: 'Leandro', pin: '1206', role: 'seller', fullName: 'Leandro del Hoyo' }
   ];
 
+  const PENDING_STATE = 'Pendiente';
+
   const NON_PURCHASE_STATES = [
-    '',
+    PENDING_STATE,
     'Precios altos',
     'Sin Stock / Faltantes',
     'Ya compró a otro proveedor',
@@ -51,7 +53,8 @@
       'loginView','dashboardView','loginForm','loginUser','loginPin','loginError','logoutBtn','sessionName','sessionRole',
       'panelTitle','monthFilter','yearFilter','searchInput','sellerFilter','statusFilter','sentFilter','adminFilters',
       'recordsContainer','historyContainer','adminStatusBoard','metricTotal','metricPending','metricWithSales',
-      'submitReportBtn','submitHelp','saveIndicator','recordTemplate','refreshCsvBtn','refreshInfo','appHeading'
+      'submitReportBtn','submitHelp','saveIndicator','recordTemplate','refreshCsvBtn','refreshInfo','appHeading',
+      'downloadExcelBtn'
     ].forEach(id => els[id] = document.getElementById(id));
   }
 
@@ -68,6 +71,7 @@
       el.addEventListener('change', render);
     });
     els.submitReportBtn.addEventListener('click', submitReport);
+    els.downloadExcelBtn.addEventListener('click', downloadExcelReport);
     els.refreshCsvBtn.addEventListener('click', async () => {
       await loadBaseData(true);
       initFilters(true);
@@ -79,9 +83,23 @@
     try {
       setSaveIndicator('saving', 'Actualizando base...');
       const sourceUrl = (window.APP_CONFIG?.remoteCsvUrl || '').trim() || (window.APP_CONFIG?.baseCsvPath || 'vips.csv');
-      const response = await fetch(`${sourceUrl}?v=${Date.now()}`, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`No se pudo leer el CSV (${response.status})`);
-      const rawText = await response.text();
+      const urls = buildCsvUrls(sourceUrl);
+      let rawText = '';
+      let lastError = null;
+
+      for (const url of urls) {
+        try {
+          const response = await fetch(url, { cache: 'no-store' });
+          if (!response.ok) throw new Error(`No se pudo leer el CSV (${response.status})`);
+          rawText = await response.text();
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      if (lastError) throw lastError;
       const parsed = parseCsvAuto(rawText).map(normalizeClient).filter(Boolean);
       state.clients = parsed;
       els.refreshInfo.textContent = `Base actualizada: ${formatDateTime(new Date())} · ${parsed.length} registros`;
@@ -89,9 +107,27 @@
     } catch (error) {
       console.error(error);
       state.clients = [];
-      els.refreshInfo.textContent = 'No se pudo actualizar la base';
+      els.refreshInfo.textContent = getCsvLoadErrorMessage();
       setSaveIndicator('error', 'Error al actualizar base');
     }
+  }
+
+  function buildCsvUrls(sourceUrl) {
+    const cleanUrl = String(sourceUrl || '').trim();
+    if (!cleanUrl) return [];
+
+    const protocol = window.location?.protocol || '';
+    if (protocol === 'file:') return [cleanUrl];
+
+    const separator = cleanUrl.includes('?') ? '&' : '?';
+    return [`${cleanUrl}${separator}v=${Date.now()}`, cleanUrl];
+  }
+
+  function getCsvLoadErrorMessage() {
+    if ((window.location?.protocol || '') === 'file:') {
+      return 'No se pudo leer el CSV desde archivo local. AbrÃ­ la app desde GitHub Pages o con un servidor local.';
+    }
+    return 'No se pudo actualizar la base';
   }
 
   function hydrateLocalState() {
@@ -117,7 +153,7 @@
     els.monthFilter.innerHTML = months.map(m => `<option value="${m}">${m}</option>`).join('');
     els.yearFilter.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
     els.sellerFilter.innerHTML = ['<option value="">Todos los vendedores</option>', ...sellers.map(s => `<option value="${s}">${s}</option>`)].join('');
-    els.statusFilter.innerHTML = ['<option value="">Todos los estados</option>', ...NON_PURCHASE_STATES.filter(Boolean).map(s => `<option value="${s}">${s}</option>`)].join('');
+    els.statusFilter.innerHTML = ['<option value="">Todos los estados</option>', ...NON_PURCHASE_STATES.map(s => `<option value="${s}">${s}</option>`)].join('');
     els.sentFilter.innerHTML = '<option value="">Enviados y no enviados</option><option value="sent">Enviados</option><option value="pending">No enviados</option>';
 
     if (keepCurrent && months.includes(prevMonth)) els.monthFilter.value = prevMonth;
@@ -168,6 +204,7 @@
     const records = getFilteredRecords();
     renderMetrics(records);
     renderRecords(records);
+    renderDownloadButton(records);
     renderSubmitButton();
     renderAdminBoard();
     renderHistory(records);
@@ -189,10 +226,7 @@
         const merged = normalizeText(`${c.cliente} ${c.nombreAlternativo}`);
         return q ? merged.includes(q) : true;
       })
-      .filter(c => {
-        const fb = getFeedback(c.id);
-        return status ? fb.estado === status : true;
-      })
+      .filter(c => status ? getRecordStatus(c) === status : true)
       .filter(c => {
         const sentKey = reportKey(c.vendedor, c.mes, c.anio);
         const isSent = Boolean(state.submissions[sentKey]?.sent);
@@ -222,6 +256,8 @@
       const node = els.recordTemplate.content.firstElementChild.cloneNode(true);
       const fb = getFeedback(record.id);
       const danger = record.ventaPesos <= 0;
+      const locked = isReportSent(record.vendedor, record.mes, record.anio);
+      const statusValue = getRecordStatus(record);
       const submitted = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
       const hasComment = Boolean((fb.comentarios || '').trim());
 
@@ -243,10 +279,11 @@
       if (danger) node.classList.add('is-danger');
 
       const stateSelect = node.querySelector('.record-state');
-      stateSelect.innerHTML = NON_PURCHASE_STATES.map(s => `<option value="${s}">${s || 'Seleccionar motivo'}</option>`).join('');
-      stateSelect.value = fb.estado || '';
-      stateSelect.disabled = !danger;
+      stateSelect.innerHTML = NON_PURCHASE_STATES.map(s => `<option value="${s}">${s}</option>`).join('');
+      stateSelect.value = danger ? statusValue : '';
+      stateSelect.disabled = !danger || locked;
       stateSelect.required = danger;
+      updateStateAppearance(stateSelect, statusValue, danger);
 
       const commentsPanel = node.querySelector('.record-comment-panel');
       const commentsEl = node.querySelector('.record-comments');
@@ -258,6 +295,10 @@
         commentsEl.placeholder = 'No requiere comentario';
         commentToggle.disabled = true;
         commentToggle.textContent = 'Sin comentario';
+      } else if (locked) {
+        commentsEl.disabled = true;
+        commentToggle.disabled = !hasComment;
+        commentToggle.textContent = hasComment ? 'Ver comentario' : 'Comentario';
       } else {
         commentToggle.textContent = hasComment ? 'Ver comentario' : 'Agregar comentario';
       }
@@ -271,7 +312,10 @@
       });
 
       if (canEditRecord(record)) {
-        stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
+        stateSelect.addEventListener('change', () => {
+          updateStateAppearance(stateSelect, stateSelect.value, danger);
+          saveRecordFeedback(record, stateSelect.value, commentsEl.value);
+        });
         commentsEl.addEventListener('input', () => {
           saveRecordFeedback(record, stateSelect.value, commentsEl.value);
           commentToggle.textContent = commentsEl.value.trim() ? 'Ver comentario' : 'Agregar comentario';
@@ -279,7 +323,7 @@
       } else {
         stateSelect.disabled = true;
         commentsEl.disabled = true;
-        commentToggle.disabled = true;
+        if (!hasComment) commentToggle.disabled = true;
       }
 
       fragment.appendChild(node);
@@ -302,7 +346,7 @@
     const sentKey = reportKey(state.currentUser.fullName, month, year);
     const alreadySent = Boolean(state.submissions[sentKey]?.sent);
 
-    els.submitReportBtn.disabled = pending > 0 || ownRecords.length === 0;
+    els.submitReportBtn.disabled = pending > 0 || ownRecords.length === 0 || alreadySent;
     els.submitReportBtn.textContent = alreadySent ? 'Informe Enviado' : 'Enviar Informe';
 
     if (!ownRecords.length) {
@@ -314,6 +358,85 @@
     } else {
       els.submitHelp.textContent = 'Todo completo. Ya podés enviar el informe.';
     }
+  }
+
+  function renderDownloadButton(records) {
+    const canDownload = state.currentUser?.role === 'admin' && state.currentUser.username === 'Fabricio';
+    els.downloadExcelBtn.classList.toggle('hidden', !canDownload);
+    if (!canDownload) return;
+    els.downloadExcelBtn.disabled = !records.length;
+  }
+
+  function downloadExcelReport() {
+    if (!(state.currentUser?.role === 'admin' && state.currentUser.username === 'Fabricio')) return;
+
+    const records = getFilteredRecords();
+    if (!records.length) {
+      alert('No hay registros para exportar con los filtros seleccionados.');
+      return;
+    }
+
+    const month = els.monthFilter.value || 'todos';
+    const year = els.yearFilter.value || 'todos';
+    const filename = `informe-vip-${slugify(month)}-${year}.xls`;
+    const rows = records.map(record => {
+      const fb = getFeedback(record.id);
+      const sent = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
+      const displayStatus = record.ventaPesos > 0 ? 'Con compra' : getRecordStatus(record);
+
+      return `
+        <tr>
+          <td>${escapeHtml(record.cliente)}</td>
+          <td>${escapeHtml(record.nombreAlternativo || '')}</td>
+          <td>${escapeHtml(record.vendedor)}</td>
+          <td>${escapeHtml(record.mes)}</td>
+          <td>${record.anio}</td>
+          <td>${formatCurrency(record.ventaPesos)}</td>
+          <td>${escapeHtml(displayStatus)}</td>
+          <td>${escapeHtml(fb.comentarios || '')}</td>
+          <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
+          <td>${sent?.sent ? 'Si' : 'No'}</td>
+          <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:x="urn:schemas-microsoft-com:office:excel"
+            xmlns="http://www.w3.org/TR/REC-html40">
+        <head>
+          <meta charset="UTF-8" />
+        </head>
+        <body>
+          <table border="1">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Nombre alternativo</th>
+                <th>Vendedor</th>
+                <th>Mes</th>
+                <th>Ano</th>
+                <th>Venta</th>
+                <th>Estado</th>
+                <th>Comentarios</th>
+                <th>Ultima actualizacion</th>
+                <th>Informe enviado</th>
+                <th>Fecha envio</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>`;
+
+    const blob = new Blob(['\uFEFF', html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(link.href), 0);
   }
 
   function renderAdminBoard() {
@@ -364,7 +487,7 @@
           <td>${escapeHtml(record.mes)}</td>
           <td>${record.anio}</td>
           <td>${formatCurrency(record.ventaPesos)}</td>
-          <td>${escapeHtml(fb.estado || '-')}</td>
+          <td>${escapeHtml(getRecordStatus(record) || '-')}</td>
           <td>${escapeHtml(fb.comentarios || '-')}</td>
           <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
           <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
@@ -425,12 +548,15 @@
     const year = Number(els.yearFilter.value);
     const ownRecords = state.clients.filter(c => c.mes === month && c.anio === year && sameVendor(c.vendedor, state.currentUser.fullName));
     const pending = ownRecords.filter(isPendingFeedback).length;
+    const sentKey = reportKey(state.currentUser.fullName, month, year);
     if (pending > 0) {
       alert(`Todavía faltan ${pending} caso(s) con venta en cero sin completar.`);
       return;
     }
 
-    state.submissions[reportKey(state.currentUser.fullName, month, year)] = {
+    if (!ownRecords.length || state.submissions[sentKey]?.sent) return;
+
+    state.submissions[sentKey] = {
       sent: true,
       sentAt: new Date().toISOString(),
       vendor: state.currentUser.fullName,
@@ -440,19 +566,31 @@
     writeStorage('cv_submissions', state.submissions);
     setSaveIndicator('saved', 'Informe enviado');
     render();
+    alert('Informe enviado con \u00E9xito');
   }
 
   function canEditRecord(record) {
+    if (isReportSent(record.vendedor, record.mes, record.anio)) return false;
     return state.currentUser.role === 'admin' || sameVendor(record.vendedor, state.currentUser.fullName);
   }
 
   function isPendingFeedback(record) {
     if (record.ventaPesos > 0) return false;
-    return !getFeedback(record.id).estado;
+    return getRecordStatus(record) === PENDING_STATE;
   }
 
   function getFeedback(id) {
     return state.feedback[id] || { estado: '', comentarios: '', updatedAt: '' };
+  }
+
+  function getRecordStatus(record) {
+    const status = (getFeedback(record.id).estado || '').trim();
+    if (record.ventaPesos > 0) return status;
+    return status || PENDING_STATE;
+  }
+
+  function isReportSent(vendedor, mes, anio) {
+    return Boolean(state.submissions[reportKey(vendedor, mes, anio)]?.sent);
   }
 
   function reportKey(vendedor, mes, anio) {
@@ -624,6 +762,16 @@
       currency: 'ARS',
       maximumFractionDigits: 0
     }).format(Number(value || 0));
+  }
+
+  function updateStateAppearance(select, value, applies) {
+    select.classList.remove('record-state--pending', 'record-state--complete');
+    if (!applies) return;
+    if (value === PENDING_STATE) {
+      select.classList.add('record-state--pending');
+      return;
+    }
+    if (value) select.classList.add('record-state--complete');
   }
 
   function setSaveIndicator(kind, message) {

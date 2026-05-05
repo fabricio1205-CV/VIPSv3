@@ -1,7 +1,7 @@
 window.APP_CONFIG = {
   mode: 'mock',
   appsScriptUrl: '',
-  baseCsvPath: 'vips.csv',
+  baseCsvPath: 'vips de prueba.csv',
   remoteCsvUrl: '',
   appTitle: 'Casa Victor | Seguimiento VIP',
   defaultMonth: 'Marzo',
