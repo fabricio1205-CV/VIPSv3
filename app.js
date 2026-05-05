@@ -259,7 +259,6 @@
       const locked = isReportSent(record.vendedor, record.mes, record.anio);
       const statusValue = getRecordStatus(record);
       const submitted = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
-      const hasComment = Boolean((fb.comentarios || '').trim());
 
       node.querySelector('.record-client').textContent = record.cliente;
       node.querySelector('.record-alt').textContent = record.nombreAlternativo ? `Alt: ${record.nombreAlternativo}` : '';
@@ -276,7 +275,7 @@
         sentEl.classList.add('not-sent');
       }
 
-      if (danger) node.classList.add('is-danger');
+      updateRecordAppearance(node, statusValue, danger);
 
       const stateSelect = node.querySelector('.record-state');
       stateSelect.innerHTML = NON_PURCHASE_STATES.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -285,45 +284,14 @@
       stateSelect.required = danger;
       updateStateAppearance(stateSelect, statusValue, danger);
 
-      const commentsPanel = node.querySelector('.record-comment-panel');
-      const commentsEl = node.querySelector('.record-comments');
-      const commentToggle = node.querySelector('.btn-comment-toggle');
-
-      commentsEl.value = fb.comentarios || '';
-      commentsEl.disabled = !danger;
-      if (!danger) {
-        commentsEl.placeholder = 'No requiere comentario';
-        commentToggle.disabled = true;
-        commentToggle.textContent = 'Sin comentario';
-      } else if (locked) {
-        commentsEl.disabled = true;
-        commentToggle.disabled = !hasComment;
-        commentToggle.textContent = hasComment ? 'Ver comentario' : 'Comentario';
-      } else {
-        commentToggle.textContent = hasComment ? 'Ver comentario' : 'Agregar comentario';
-      }
-
-      if (hasComment) commentsPanel.classList.remove('hidden');
-
-      commentToggle.addEventListener('click', () => {
-        if (commentToggle.disabled) return;
-        commentsPanel.classList.toggle('hidden');
-        if (!commentsPanel.classList.contains('hidden')) commentsEl.focus();
-      });
-
       if (canEditRecord(record)) {
         stateSelect.addEventListener('change', () => {
           updateStateAppearance(stateSelect, stateSelect.value, danger);
-          saveRecordFeedback(record, stateSelect.value, commentsEl.value);
-        });
-        commentsEl.addEventListener('input', () => {
-          saveRecordFeedback(record, stateSelect.value, commentsEl.value);
-          commentToggle.textContent = commentsEl.value.trim() ? 'Ver comentario' : 'Agregar comentario';
+          updateRecordAppearance(node, stateSelect.value, danger);
+          saveRecordFeedback(record, stateSelect.value, '');
         });
       } else {
         stateSelect.disabled = true;
-        commentsEl.disabled = true;
-        if (!hasComment) commentToggle.disabled = true;
       }
 
       fragment.appendChild(node);
@@ -393,7 +361,6 @@
           <td>${record.anio}</td>
           <td>${formatCurrency(record.ventaPesos)}</td>
           <td>${escapeHtml(displayStatus)}</td>
-          <td>${escapeHtml(fb.comentarios || '')}</td>
           <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
           <td>${sent?.sent ? 'Si' : 'No'}</td>
           <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
@@ -418,7 +385,6 @@
                 <th>Ano</th>
                 <th>Venta</th>
                 <th>Estado</th>
-                <th>Comentarios</th>
                 <th>Ultima actualizacion</th>
                 <th>Informe enviado</th>
                 <th>Fecha envio</th>
@@ -488,7 +454,6 @@
           <td>${record.anio}</td>
           <td>${formatCurrency(record.ventaPesos)}</td>
           <td>${escapeHtml(getRecordStatus(record) || '-')}</td>
-          <td>${escapeHtml(fb.comentarios || '-')}</td>
           <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
           <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
         </tr>`;
@@ -511,12 +476,11 @@
               <th>Año</th>
               <th>Venta</th>
               <th>Estado</th>
-              <th>Comentarios</th>
               <th>Actualización</th>
               <th>Envío</th>
             </tr>
           </thead>
-          <tbody>${rows || '<tr><td colspan="9">Sin registros.</td></tr>'}</tbody>
+          <tbody>${rows || '<tr><td colspan="8">Sin registros.</td></tr>'}</tbody>
         </table>
       </div>`;
     els.historyContainer.classList.remove('hidden');
@@ -772,6 +736,16 @@
       return;
     }
     if (value) select.classList.add('record-state--complete');
+  }
+
+  function updateRecordAppearance(node, value, applies) {
+    node.classList.remove('is-danger', 'is-complete');
+    if (!applies) return;
+    if (value && value !== PENDING_STATE) {
+      node.classList.add('is-complete');
+      return;
+    }
+    node.classList.add('is-danger');
   }
 
   function setSaveIndicator(kind, message) {
