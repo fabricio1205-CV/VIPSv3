@@ -1,7 +1,8 @@
+
 (() => {
   const USERS = [
     { username: 'Fabricio', pin: '12051205', role: 'admin', fullName: 'Fabricio' },
-    { username: 'Seba', pin: '1207', role: 'admin', fullName: 'SebastiÃ¡n' },
+    { username: 'Seba', pin: '1207', role: 'admin', fullName: 'Sebastián' },
     { username: 'Paola', pin: '1201', role: 'seller', fullName: 'Paola Balado' },
     { username: 'Tucu', pin: '1202', role: 'seller', fullName: 'Dario Lopez' },
     { username: 'Gaston', pin: '1203', role: 'seller', fullName: 'Gaston Rodriguez' },
@@ -14,19 +15,16 @@
     '',
     'Precios altos',
     'Sin Stock / Faltantes',
-    'Ya comprÃ³ a otro proveedor',
-    'No tenÃ­a necesidad',
+    'Ya compró a otro proveedor',
+    'No tenía necesidad',
     'Problema financiero',
-    'No estÃ¡ comprando / Cerrado',
-    'No respondiÃ³',
+    'No está comprando / Cerrado',
+    'No respondió',
     'Compra el mes que viene',
     'Otro'
   ];
 
-  const MONTHS = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
-  ];
+  const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   const els = {};
   const state = {
@@ -34,8 +32,7 @@
     clients: [],
     feedback: {},
     submissions: {},
-    saveTimer: null,
-    renderedRecords: []
+    saveTimer: null
   };
 
   document.addEventListener('DOMContentLoaded', init);
@@ -45,8 +42,8 @@
     populateUsers();
     bindEvents();
     hydrateLocalState();
-    await loadBaseData();
-    initFilters();
+    await loadBaseData(false);
+    initFilters(false);
   }
 
   function cacheDom() {
@@ -54,12 +51,13 @@
       'loginView','dashboardView','loginForm','loginUser','loginPin','loginError','logoutBtn','sessionName','sessionRole',
       'panelTitle','monthFilter','yearFilter','searchInput','sellerFilter','statusFilter','sentFilter','adminFilters',
       'recordsContainer','historyContainer','adminStatusBoard','metricTotal','metricPending','metricWithSales',
-      'submitReportBtn','submitHelp','saveIndicator','recordTemplate','refreshCsvBtn','refreshInfo'
+      'submitReportBtn','submitHelp','saveIndicator','recordTemplate','refreshCsvBtn','refreshInfo','appHeading'
     ].forEach(id => els[id] = document.getElementById(id));
   }
 
   function populateUsers() {
     els.loginUser.innerHTML = USERS.map(u => `<option value="${u.username}">${u.username}</option>`).join('');
+    if (window.APP_CONFIG?.appTitle) els.appHeading.textContent = window.APP_CONFIG.appTitle;
   }
 
   function bindEvents() {
@@ -67,6 +65,7 @@
     els.logoutBtn.addEventListener('click', logout);
     [els.monthFilter, els.yearFilter, els.searchInput, els.sellerFilter, els.statusFilter, els.sentFilter].forEach(el => {
       el.addEventListener('input', render);
+      el.addEventListener('change', render);
     });
     els.submitReportBtn.addEventListener('click', submitReport);
     els.refreshCsvBtn.addEventListener('click', async () => {
@@ -79,13 +78,13 @@
   async function loadBaseData(showMessage = false) {
     try {
       setSaveIndicator('saving', 'Actualizando base...');
-      const sourceUrl = (window.APP_CONFIG.remoteCsvUrl || '').trim() || window.APP_CONFIG.baseCsvPath;
-      const response = await fetch(sourceUrl, { cache: 'no-store' });
+      const sourceUrl = (window.APP_CONFIG?.remoteCsvUrl || '').trim() || (window.APP_CONFIG?.baseCsvPath || 'vips.csv');
+      const response = await fetch(`${sourceUrl}?v=${Date.now()}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`No se pudo leer el CSV (${response.status})`);
       const rawText = await response.text();
-      state.clients = parseCsvAuto(rawText).map(normalizeClient).filter(Boolean);
-      const now = new Date();
-      els.refreshInfo.textContent = `Base actualizada: ${formatDateTime(now)}`;
+      const parsed = parseCsvAuto(rawText).map(normalizeClient).filter(Boolean);
+      state.clients = parsed;
+      els.refreshInfo.textContent = `Base actualizada: ${formatDateTime(new Date())} · ${parsed.length} registros`;
       setSaveIndicator('saved', showMessage ? 'Base actualizada' : 'Listo');
     } catch (error) {
       console.error(error);
@@ -119,19 +118,21 @@
     els.yearFilter.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
     els.sellerFilter.innerHTML = ['<option value="">Todos los vendedores</option>', ...sellers.map(s => `<option value="${s}">${s}</option>`)].join('');
     els.statusFilter.innerHTML = ['<option value="">Todos los estados</option>', ...NON_PURCHASE_STATES.filter(Boolean).map(s => `<option value="${s}">${s}</option>`)].join('');
-    els.sentFilter.innerHTML = `
-      <option value="">Enviados y no enviados</option>
-      <option value="sent">Enviados</option>
-      <option value="pending">No enviados</option>
-    `;
+    els.sentFilter.innerHTML = '<option value="">Enviados y no enviados</option><option value="sent">Enviados</option><option value="pending">No enviados</option>';
 
     if (keepCurrent && months.includes(prevMonth)) els.monthFilter.value = prevMonth;
     if (keepCurrent && years.map(String).includes(prevYear)) els.yearFilter.value = prevYear;
 
-    if (!els.monthFilter.value && periods.length) {
-      const last = periods[periods.length - 1];
-      els.monthFilter.value = last.mes;
-      els.yearFilter.value = String(last.anio);
+    if (!els.monthFilter.value) {
+      const defaultMonth = window.APP_CONFIG?.defaultMonth || '';
+      if (months.includes(defaultMonth)) els.monthFilter.value = defaultMonth;
+      else if (periods.length) els.monthFilter.value = periods[periods.length - 1].mes;
+    }
+
+    if (!els.yearFilter.value) {
+      const defaultYear = String(window.APP_CONFIG?.defaultYear || '');
+      if (years.map(String).includes(defaultYear)) els.yearFilter.value = defaultYear;
+      else if (periods.length) els.yearFilter.value = String(periods[periods.length - 1].anio);
     }
   }
 
@@ -165,10 +166,9 @@
   function render() {
     if (!state.currentUser) return;
     const records = getFilteredRecords();
-    state.renderedRecords = records;
     renderMetrics(records);
     renderRecords(records);
-    renderSubmitButton(records);
+    renderSubmitButton();
     renderAdminBoard();
     renderHistory(records);
   }
@@ -176,7 +176,7 @@
   function getFilteredRecords() {
     const month = els.monthFilter.value;
     const year = Number(els.yearFilter.value);
-    const q = (els.searchInput.value || '').trim().toLowerCase();
+    const q = normalizeText(els.searchInput.value || '');
     const seller = els.sellerFilter.value;
     const status = els.statusFilter.value;
     const sent = els.sentFilter.value;
@@ -186,7 +186,7 @@
       .filter(c => state.currentUser.role === 'admin' ? true : sameVendor(c.vendedor, state.currentUser.fullName || state.currentUser.username))
       .filter(c => seller ? c.vendedor === seller : true)
       .filter(c => {
-        const merged = `${c.cliente} ${c.nombreAlternativo}`.toLowerCase();
+        const merged = normalizeText(`${c.cliente} ${c.nombreAlternativo}`);
         return q ? merged.includes(q) : true;
       })
       .filter(c => {
@@ -218,25 +218,22 @@
     }
 
     const fragment = document.createDocumentFragment();
-
     records.forEach(record => {
       const node = els.recordTemplate.content.firstElementChild.cloneNode(true);
       const fb = getFeedback(record.id);
-      const submitted = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
       const danger = record.ventaPesos <= 0;
+      const submitted = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
+      const hasComment = Boolean((fb.comentarios || '').trim());
 
       node.querySelector('.record-client').textContent = record.cliente;
-      node.querySelector('.record-alt').textContent = record.nombreAlternativo || 'Sin nombre alternativo';
-      node.querySelector('.record-vendor').textContent = record.vendedor;
-      node.querySelector('.record-fx').textContent = record.fxCompra2025 || '-';
-      node.querySelector('.record-status2025').textContent = record.status2025 || '-';
-      node.querySelector('.record-sales').textContent = formatCurrency(record.ventaPesos);
+      node.querySelector('.record-alt').textContent = record.nombreAlternativo ? `Alt: ${record.nombreAlternativo}` : '';
       node.querySelector('.record-period').textContent = `${record.mes} ${record.anio}`;
-      node.querySelector('.record-updated').textContent = fb.updatedAt ? `Ãšltima actualizaciÃ³n: ${formatDateTime(fb.updatedAt)}` : 'Sin cambios guardados';
+      node.querySelector('.record-sales').textContent = formatCurrency(record.ventaPesos);
+      node.querySelector('.record-updated').textContent = fb.updatedAt ? `Última actualización: ${formatDateTime(fb.updatedAt)}` : 'Sin cambios guardados';
 
       const sentEl = node.querySelector('.record-sent');
       if (submitted?.sent) {
-        sentEl.textContent = `Informe enviado Â· ${formatDateTime(submitted.sentAt)}`;
+        sentEl.textContent = `Informe enviado · ${formatDateTime(submitted.sentAt)}`;
         sentEl.classList.add('sent');
       } else {
         sentEl.textContent = 'Informe no enviado';
@@ -251,21 +248,38 @@
       stateSelect.disabled = !danger;
       stateSelect.required = danger;
 
+      const commentsPanel = node.querySelector('.record-comment-panel');
       const commentsEl = node.querySelector('.record-comments');
+      const commentToggle = node.querySelector('.btn-comment-toggle');
+
       commentsEl.value = fb.comentarios || '';
       commentsEl.disabled = !danger;
-
       if (!danger) {
-        stateSelect.title = 'No requiere feedback porque tiene venta positiva';
         commentsEl.placeholder = 'No requiere comentario';
+        commentToggle.disabled = true;
+        commentToggle.textContent = 'Sin comentario';
+      } else {
+        commentToggle.textContent = hasComment ? 'Ver comentario' : 'Agregar comentario';
       }
+
+      if (hasComment) commentsPanel.classList.remove('hidden');
+
+      commentToggle.addEventListener('click', () => {
+        if (commentToggle.disabled) return;
+        commentsPanel.classList.toggle('hidden');
+        if (!commentsPanel.classList.contains('hidden')) commentsEl.focus();
+      });
 
       if (canEditRecord(record)) {
         stateSelect.addEventListener('change', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
-        commentsEl.addEventListener('input', () => saveRecordFeedback(record, stateSelect.value, commentsEl.value));
+        commentsEl.addEventListener('input', () => {
+          saveRecordFeedback(record, stateSelect.value, commentsEl.value);
+          commentToggle.textContent = commentsEl.value.trim() ? 'Ver comentario' : 'Agregar comentario';
+        });
       } else {
         stateSelect.disabled = true;
         commentsEl.disabled = true;
+        commentToggle.disabled = true;
       }
 
       fragment.appendChild(node);
@@ -274,28 +288,31 @@
     els.recordsContainer.appendChild(fragment);
   }
 
-  function renderSubmitButton(records) {
+  function renderSubmitButton() {
     if (state.currentUser.role === 'admin') {
       els.submitReportBtn.disabled = true;
-      els.submitReportBtn.textContent = 'Enviar Informe';
-      els.submitHelp.textContent = 'En el perfil administrador solo se monitorean y editan informes.';
+      els.submitHelp.textContent = 'Desde administrador podés ver y editar, pero no enviar informes.';
       return;
     }
 
-    const periodRecords = records;
-    const pending = periodRecords.filter(isPendingFeedback).length;
-    const sentKey = reportKey(state.currentUser.fullName, els.monthFilter.value, Number(els.yearFilter.value));
+    const month = els.monthFilter.value;
+    const year = Number(els.yearFilter.value);
+    const ownRecords = state.clients.filter(c => c.mes === month && c.anio === year && sameVendor(c.vendedor, state.currentUser.fullName));
+    const pending = ownRecords.filter(isPendingFeedback).length;
+    const sentKey = reportKey(state.currentUser.fullName, month, year);
     const alreadySent = Boolean(state.submissions[sentKey]?.sent);
 
-    els.submitReportBtn.disabled = pending > 0 || !periodRecords.length;
+    els.submitReportBtn.disabled = pending > 0 || ownRecords.length === 0;
     els.submitReportBtn.textContent = alreadySent ? 'Informe Enviado' : 'Enviar Informe';
 
-    if (alreadySent) {
+    if (!ownRecords.length) {
+      els.submitHelp.textContent = 'No hay cuentas para este período.';
+    } else if (alreadySent) {
       els.submitHelp.textContent = `Enviado el ${formatDateTime(state.submissions[sentKey].sentAt)}.`;
     } else if (pending > 0) {
       els.submitHelp.textContent = `Faltan ${pending} caso(s) con venta en cero sin motivo cargado.`;
     } else {
-      els.submitHelp.textContent = 'Todo completo. Ya podÃ©s enviar el informe.';
+      els.submitHelp.textContent = 'Todo completo. Ya podés enviar el informe.';
     }
   }
 
@@ -310,7 +327,7 @@
     const periodRecords = state.clients.filter(c => c.mes === month && c.anio === year);
     const grouped = groupBy(periodRecords, item => item.vendedor);
 
-    const cards = Object.keys(grouped).sort((a,b)=>a.localeCompare(b,'es')).map(vendor => {
+    const html = Object.keys(grouped).sort((a,b) => a.localeCompare(b, 'es')).map(vendor => {
       const records = grouped[vendor];
       const pending = records.filter(isPendingFeedback).length;
       const sent = Boolean(state.submissions[reportKey(vendor, month, year)]?.sent);
@@ -321,18 +338,17 @@
           <p>Pendientes: <strong>${pending}</strong></p>
           <p>Con compra: <strong>${records.filter(r => r.ventaPesos > 0).length}</strong></p>
           <p>Informe: <strong>${sent ? 'Enviado' : 'No enviado'}</strong></p>
-        </div>
-      `;
+        </div>`;
     }).join('');
 
     els.adminStatusBoard.innerHTML = `
       <div class="section-head">
         <div>
           <h3>Estado general por vendedor</h3>
-          <p class="muted">PerÃ­odo: ${month} ${year}</p>
+          <p class="muted">Período: ${month || '-'} ${year || ''}</p>
         </div>
       </div>
-      <div class="status-board-grid">${cards || '<p>No hay datos para este perÃ­odo.</p>'}</div>
+      <div class="status-board-grid">${html || '<p>No hay datos para este período.</p>'}</div>
     `;
     els.adminStatusBoard.classList.remove('hidden');
   }
@@ -343,24 +359,23 @@
       const sent = state.submissions[reportKey(record.vendedor, record.mes, record.anio)];
       return `
         <tr>
-          <td>${record.cliente}</td>
-          <td>${record.vendedor}</td>
-          <td>${record.mes}</td>
+          <td>${escapeHtml(record.cliente)}</td>
+          <td>${escapeHtml(record.vendedor)}</td>
+          <td>${escapeHtml(record.mes)}</td>
           <td>${record.anio}</td>
           <td>${formatCurrency(record.ventaPesos)}</td>
-          <td>${fb.estado || '-'}</td>
+          <td>${escapeHtml(fb.estado || '-')}</td>
           <td>${escapeHtml(fb.comentarios || '-')}</td>
           <td>${fb.updatedAt ? formatDateTime(fb.updatedAt) : '-'}</td>
           <td>${sent?.sentAt ? formatDateTime(sent.sentAt) : '-'}</td>
-        </tr>
-      `;
+        </tr>`;
     }).join('');
 
     els.historyContainer.innerHTML = `
       <div class="section-head">
         <div>
-          <h3>Historial del perÃ­odo filtrado</h3>
-          <p class="muted">Se muestra lo que estÃ¡ visible segÃºn filtros actuales.</p>
+          <h3>Historial del período filtrado</h3>
+          <p class="muted">Se muestra solo lo visible según filtros actuales.</p>
         </div>
       </div>
       <div class="history-table-wrap">
@@ -370,18 +385,17 @@
               <th>Cliente</th>
               <th>Vendedor</th>
               <th>Mes</th>
-              <th>AÃ±o</th>
+              <th>Año</th>
               <th>Venta</th>
               <th>Estado</th>
               <th>Comentarios</th>
-              <th>ActualizaciÃ³n</th>
-              <th>EnvÃ­o</th>
+              <th>Actualización</th>
+              <th>Envío</th>
             </tr>
           </thead>
           <tbody>${rows || '<tr><td colspan="9">Sin registros.</td></tr>'}</tbody>
         </table>
-      </div>
-    `;
+      </div>`;
     els.historyContainer.classList.remove('hidden');
   }
 
@@ -400,9 +414,9 @@
     setSaveIndicator('saving', 'Guardando...');
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(() => {
-      setSaveIndicator('saved', 'Guardado automÃ¡ticamente');
+      setSaveIndicator('saved', 'Guardado automáticamente');
       render();
-    }, 250);
+    }, 220);
   }
 
   function submitReport() {
@@ -412,7 +426,7 @@
     const ownRecords = state.clients.filter(c => c.mes === month && c.anio === year && sameVendor(c.vendedor, state.currentUser.fullName));
     const pending = ownRecords.filter(isPendingFeedback).length;
     if (pending > 0) {
-      alert(`TodavÃ­a faltan ${pending} caso(s) con venta en cero sin completar.`);
+      alert(`Todavía faltan ${pending} caso(s) con venta en cero sin completar.`);
       return;
     }
 
@@ -447,17 +461,15 @@
 
   function normalizeClient(raw) {
     const cliente = pick(raw, ['CLIENTE', 'NOMBRE DEL CLIENTE', 'CLIENTE VIP']);
-    const vendedorRaw = pick(raw, ['VENDEDOR', 'NOMBRE DEL VENDEDOR']);
-    const vendedor = normalizeVendor(vendedorRaw);
+    const vendedor = normalizeVendor(pick(raw, ['VENDEDOR', 'NOMBRE DEL VENDEDOR']));
     const nombreAlternativo = pick(raw, ['NOMBRE ALTERNATIVO', 'ALTERNATIVO', 'CUENTA ALTERNATIVA']);
     const fxCompra2025 = pick(raw, ['FX COMPRA 2025', 'FX COMPRA', 'FRECUENCIA 2025']);
     const status2025 = pick(raw, ['STATUS 2025', 'STATUS', 'ESTADO 2025']);
     const ventaPesos = parseMoney(pick(raw, ['VALUE $', 'VENTA EN PESOS', 'VENTA', 'VALUE$']));
-    const mes = normalizeMonth(pick(raw, ['MES', 'MES INFORME']));
-    const anio = parseInt(pick(raw, ['AÃ‘O', 'ANIO', 'AÃ‘O INFORME']) || '0', 10);
+    const mes = normalizeMonth(pick(raw, ['MES', 'MES INFORME']) || window.APP_CONFIG?.defaultMonth || '');
+    const anio = parseInt(pick(raw, ['AÑO', 'ANIO', 'AÑO INFORME']) || window.APP_CONFIG?.defaultYear || '0', 10);
 
     if (!cliente || !vendedor || !mes || !anio) return null;
-
     return {
       id: slugify(`${cliente}|${vendedor}|${mes}|${anio}`),
       cliente,
@@ -478,12 +490,16 @@
       'paola balado': 'Paola Balado',
       'dario lopez': 'Dario Lopez',
       'tucu': 'Dario Lopez',
+      'gaston': 'Gaston Rodriguez',
       'gaston rodriguez': 'Gaston Rodriguez',
+      'diego': 'Diego Daniel Ponce',
       'diego daniel ponce': 'Diego Daniel Ponce',
+      'martin': 'Martin Aguilar',
       'martin aguilar': 'Martin Aguilar',
+      'leandro': 'Leandro del Hoyo',
       'leandro del hoyo': 'Leandro del Hoyo'
     };
-    return map[clean] || toTitleCase((value || '').trim());
+    return map[clean] || toTitleCase(String(value || '').trim());
   }
 
   function sameVendor(a, b) {
@@ -501,7 +517,7 @@
       '6': 'Junio', '06': 'Junio', 'junio': 'Junio',
       '7': 'Julio', '07': 'Julio', 'julio': 'Julio',
       '8': 'Agosto', '08': 'Agosto', 'agosto': 'Agosto',
-      '9': 'Septiembre', '09': 'Septiembre', 'septiembre': 'Septiembre',
+      '9': 'Septiembre', '09': 'Septiembre', 'septiembre': 'Septiembre', 'setiembre': 'Septiembre',
       '10': 'Octubre', 'octubre': 'Octubre',
       '11': 'Noviembre', 'noviembre': 'Noviembre',
       '12': 'Diciembre', 'diciembre': 'Diciembre'
@@ -510,30 +526,44 @@
   }
 
   function monthOrder(month) {
-    return MONTHS.findIndex(m => normalizeText(m) === normalizeText(month));
+    const idx = MONTHS.findIndex(m => normalizeText(m) === normalizeText(month));
+    return idx === -1 ? 99 : idx;
   }
 
   function parseMoney(value) {
     if (value == null) return 0;
-    const cleaned = String(value).replace(/\$/g, '').replace(/\./g, '').replace(/,/g, '.').replace(/\s+/g, '').trim();
+    const cleaned = String(value)
+      .replace(/\$/g, '')
+      .replace(/\./g, '')
+      .replace(/,/g, '.')
+      .replace(/\s+/g, '')
+      .trim();
     const num = Number(cleaned);
     return Number.isFinite(num) ? num : 0;
   }
 
   function parseCsvAuto(text) {
-    const cleaned = text.replace(/^\uFEFF/, '').trim();
+    const cleaned = String(text || '').replace(/^\uFEFF/, '').trim();
     if (!cleaned) return [];
 
     const firstLine = cleaned.split(/\r?\n/)[0] || '';
-    const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+    let delimiter = ',';
+    if (firstLine.includes('\t')) delimiter = '\t';
+    else if ((firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length) delimiter = ';';
+
     const rows = splitCsvRows(cleaned, delimiter);
     if (!rows.length) return [];
+
     const headers = rows[0].map(cell => sanitizeHeader(cell));
-    return rows.slice(1).filter(row => row.some(Boolean)).map(row => {
-      const obj = {};
-      headers.forEach((header, index) => obj[header] = (row[index] || '').trim());
-      return obj;
-    });
+    return rows.slice(1)
+      .filter(row => row.some(Boolean))
+      .map(row => {
+        const obj = {};
+        headers.forEach((header, index) => {
+          obj[header] = (row[index] || '').trim();
+        });
+        return obj;
+      });
   }
 
   function splitCsvRows(text, delimiter) {
@@ -572,7 +602,12 @@
   }
 
   function sanitizeHeader(header) {
-    return String(header || '').replace(/^\uFEFF/, '').trim().toUpperCase();
+    return String(header || '')
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
   }
 
   function pick(obj, keys) {
@@ -584,7 +619,11 @@
   }
 
   function formatCurrency(value) {
-    return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value || 0));
+    return new Intl.NumberFormat('es-AR', {
+      style: 'currency',
+      currency: 'ARS',
+      maximumFractionDigits: 0
+    }).format(Number(value || 0));
   }
 
   function setSaveIndicator(kind, message) {
@@ -622,7 +661,11 @@
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '-';
     return new Intl.DateTimeFormat('es-AR', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
     }).format(date);
   }
 
@@ -640,7 +683,7 @@
   }
 
   function escapeHtml(value) {
-    return String(value)
+    return String(value || '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
