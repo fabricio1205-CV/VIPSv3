@@ -34,6 +34,7 @@
     clients: [],
     feedback: {},
     submissions: {},
+    backendReady: false,
     saveTimer: null
   };
 
@@ -44,6 +45,7 @@
     populateUsers();
     bindEvents();
     hydrateLocalState();
+    await hydrateBackendState();
     await loadBaseData(false);
     initFilters(false);
   }
@@ -73,6 +75,7 @@
     els.submitReportBtn.addEventListener('click', submitReport);
     els.downloadExcelBtn.addEventListener('click', downloadExcelReport);
     els.refreshCsvBtn.addEventListener('click', async () => {
+      await hydrateBackendState();
       await loadBaseData(true);
       initFilters(true);
       render();
@@ -133,6 +136,34 @@
   function hydrateLocalState() {
     state.feedback = readStorage('cv_feedback', {});
     state.submissions = readStorage('cv_submissions', {});
+  }
+
+  async function hydrateBackendState() {
+    if (!hasBackend()) return;
+
+    try {
+      setSaveIndicator('saving', 'Sincronizando...');
+      const data = await backendGet('getDashboard');
+      if (!data?.ok) throw new Error(data?.error || 'No se pudo leer el backend');
+
+      state.feedback = {
+        ...state.feedback,
+        ...feedbackRowsToMap(data.feedback || [])
+      };
+      state.submissions = {
+        ...state.submissions,
+        ...submissionRowsToMap(data.submissions || [])
+      };
+
+      writeStorage('cv_feedback', state.feedback);
+      writeStorage('cv_submissions', state.submissions);
+      state.backendReady = true;
+      setSaveIndicator('saved', 'Sincronizado');
+    } catch (error) {
+      console.error(error);
+      state.backendReady = false;
+      setSaveIndicator('error', 'Sin conexion al backend');
+    }
   }
 
   function initFilters(keepCurrent = false) {
@@ -486,12 +517,13 @@
     els.historyContainer.classList.remove('hidden');
   }
 
-  function saveRecordFeedback(record, estado, comentarios) {
+  async function saveRecordFeedback(record, estado, comentarios) {
     if (!canEditRecord(record)) return;
+    const updatedAt = new Date().toISOString();
     state.feedback[record.id] = {
       estado: (estado || '').trim(),
       comentarios: (comentarios || '').trim(),
-      updatedAt: new Date().toISOString(),
+      updatedAt,
       vendedor: record.vendedor,
       mes: record.mes,
       anio: record.anio,
@@ -500,13 +532,34 @@
     writeStorage('cv_feedback', state.feedback);
     setSaveIndicator('saving', 'Guardando...');
     clearTimeout(state.saveTimer);
-    state.saveTimer = setTimeout(() => {
-      setSaveIndicator('saved', 'Guardado automáticamente');
-      render();
-    }, 220);
+
+    try {
+      if (hasBackend()) {
+        await backendPost({
+          action: 'saveFeedback',
+          key: record.id,
+          clienteId: record.id,
+          cliente: record.cliente,
+          vendedor: record.vendedor,
+          mes: record.mes,
+          anio: record.anio,
+          estado: state.feedback[record.id].estado,
+          comentarios: state.feedback[record.id].comentarios,
+          updatedAt
+        });
+        state.backendReady = true;
+      }
+      setSaveIndicator('saved', hasBackend() ? 'Guardado en Sheets' : 'Guardado localmente');
+    } catch (error) {
+      console.error(error);
+      state.backendReady = false;
+      setSaveIndicator('error', 'Guardado local, pendiente de sincronizar');
+    }
+
+    state.saveTimer = setTimeout(render, 220);
   }
 
-  function submitReport() {
+  async function submitReport() {
     if (state.currentUser.role !== 'seller') return;
     const month = els.monthFilter.value;
     const year = Number(els.yearFilter.value);
@@ -520,17 +573,41 @@
 
     if (!ownRecords.length || state.submissions[sentKey]?.sent) return;
 
+    const sentAt = new Date().toISOString();
     state.submissions[sentKey] = {
       sent: true,
-      sentAt: new Date().toISOString(),
+      sentAt,
       vendor: state.currentUser.fullName,
       month,
       year
     };
     writeStorage('cv_submissions', state.submissions);
-    setSaveIndicator('saved', 'Informe enviado');
-    render();
-    alert('Informe enviado con \u00E9xito');
+    els.submitReportBtn.disabled = true;
+    setSaveIndicator('saving', 'Enviando informe...');
+
+    try {
+      if (hasBackend()) {
+        await backendPost({
+          action: 'submitReport',
+          key: sentKey,
+          vendedor: state.currentUser.fullName,
+          mes: month,
+          anio: year,
+          sent: true,
+          sentAt
+        });
+        state.backendReady = true;
+      }
+      setSaveIndicator('saved', hasBackend() ? 'Informe enviado a Sheets' : 'Informe enviado');
+      render();
+      alert('Informe enviado con \u00E9xito');
+    } catch (error) {
+      console.error(error);
+      state.backendReady = false;
+      setSaveIndicator('error', 'Informe guardado local, pendiente de sincronizar');
+      render();
+      alert('El informe quedo guardado localmente, pero no se pudo sincronizar con Google Sheets.');
+    }
   }
 
   function canEditRecord(record) {
@@ -764,6 +841,109 @@
 
   function writeStorage(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  function getBackendUrl() {
+    return String(window.APP_CONFIG?.appsScriptUrl || '').trim();
+  }
+
+  function hasBackend() {
+    return Boolean(getBackendUrl());
+  }
+
+  function backendGet(action) {
+    const callbackName = `cvBackend_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const url = new URL(getBackendUrl());
+    url.searchParams.set('action', action);
+    url.searchParams.set('callback', callbackName);
+
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Timeout leyendo backend'));
+      }, 12000);
+
+      function cleanup() {
+        clearTimeout(timer);
+        delete window[callbackName];
+        script.remove();
+      }
+
+      window[callbackName] = data => {
+        cleanup();
+        resolve(data);
+      };
+
+      script.onerror = () => {
+        cleanup();
+        reject(new Error('No se pudo conectar al backend'));
+      };
+
+      script.src = url.toString();
+      document.body.appendChild(script);
+    });
+  }
+
+  async function backendPost(payload) {
+    const request = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8'
+      },
+      body: JSON.stringify(payload)
+    };
+
+    try {
+      const response = await fetch(getBackendUrl(), request);
+      const text = await response.text();
+      const data = text ? JSON.parse(text) : {};
+      if (!data.ok) {
+        const backendError = new Error(data.error || 'El backend rechazo la operacion');
+        backendError.skipNoCorsFallback = true;
+        throw backendError;
+      }
+      return data;
+    } catch (error) {
+      if (error.skipNoCorsFallback) throw error;
+      await fetch(getBackendUrl(), {
+        ...request,
+        mode: 'no-cors'
+      });
+      return { ok: true, opaque: true };
+    }
+  }
+
+  function feedbackRowsToMap(rows) {
+    return rows.reduce((acc, row) => {
+      const key = String(row.key || row.clienteId || '').trim();
+      if (!key) return acc;
+      acc[key] = {
+        estado: String(row.estado || '').trim(),
+        comentarios: String(row.comentarios || '').trim(),
+        updatedAt: row.updatedAt || '',
+        vendedor: row.vendedor || '',
+        mes: row.mes || '',
+        anio: Number(row.anio || 0),
+        cliente: row.cliente || ''
+      };
+      return acc;
+    }, {});
+  }
+
+  function submissionRowsToMap(rows) {
+    return rows.reduce((acc, row) => {
+      const key = String(row.key || reportKey(row.vendedor, row.mes, row.anio)).trim();
+      if (!key) return acc;
+      acc[key] = {
+        sent: row.sent === true || String(row.sent).toLowerCase() === 'true',
+        sentAt: row.sentAt || '',
+        vendor: row.vendedor || '',
+        month: row.mes || '',
+        year: Number(row.anio || 0)
+      };
+      return acc;
+    }, {});
   }
 
   function normalizeText(value) {
