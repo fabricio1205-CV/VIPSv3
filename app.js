@@ -146,14 +146,8 @@
       const data = await backendGet('getDashboard');
       if (!data?.ok) throw new Error(data?.error || 'No se pudo leer el backend');
 
-      state.feedback = {
-        ...state.feedback,
-        ...feedbackRowsToMap(data.feedback || [])
-      };
-      state.submissions = {
-        ...state.submissions,
-        ...submissionRowsToMap(data.submissions || [])
-      };
+      state.feedback = feedbackRowsToMap(data.feedback || []);
+      state.submissions = submissionRowsToMap(data.submissions || []);
 
       writeStorage('cv_feedback', state.feedback);
       writeStorage('cv_submissions', state.submissions);
@@ -574,14 +568,6 @@
     if (!ownRecords.length || state.submissions[sentKey]?.sent) return;
 
     const sentAt = new Date().toISOString();
-    state.submissions[sentKey] = {
-      sent: true,
-      sentAt,
-      vendor: state.currentUser.fullName,
-      month,
-      year
-    };
-    writeStorage('cv_submissions', state.submissions);
     els.submitReportBtn.disabled = true;
     setSaveIndicator('saving', 'Enviando informe...');
 
@@ -598,15 +584,23 @@
         });
         state.backendReady = true;
       }
+      state.submissions[sentKey] = {
+        sent: true,
+        sentAt,
+        vendor: state.currentUser.fullName,
+        month,
+        year
+      };
+      writeStorage('cv_submissions', state.submissions);
       setSaveIndicator('saved', hasBackend() ? 'Informe enviado a Sheets' : 'Informe enviado');
       render();
       alert('Informe enviado con \u00E9xito');
     } catch (error) {
       console.error(error);
       state.backendReady = false;
-      setSaveIndicator('error', 'Informe guardado local, pendiente de sincronizar');
+      setSaveIndicator('error', 'No se pudo enviar a Sheets');
       render();
-      alert('El informe quedo guardado localmente, pero no se pudo sincronizar con Google Sheets.');
+      alert('No se pudo enviar el informe a Google Sheets. Revisá la conexión o el Apps Script e intentá nuevamente.');
     }
   }
 
@@ -910,8 +904,30 @@
         ...request,
         mode: 'no-cors'
       });
-      return { ok: true, opaque: true };
+      await delay(900);
+      return verifyBackendWrite(payload);
     }
+  }
+
+  async function verifyBackendWrite(payload) {
+    const data = await backendGet('getDashboard');
+    if (!data?.ok) throw new Error(data?.error || 'No se pudo verificar el guardado');
+
+    if (payload.action === 'saveFeedback') {
+      const saved = (data.feedback || []).some(row => String(row.key || row.clienteId || '') === String(payload.key));
+      if (saved) return { ok: true, verified: true };
+    }
+
+    if (payload.action === 'submitReport') {
+      const saved = (data.submissions || []).some(row => String(row.key || '') === String(payload.key));
+      if (saved) return { ok: true, verified: true };
+    }
+
+    throw new Error('El backend no confirmo el guardado en Sheets');
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   function feedbackRowsToMap(rows) {
